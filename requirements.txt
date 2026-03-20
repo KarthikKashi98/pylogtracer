@@ -1,0 +1,17 @@
+# Core LLM framework
+langchain>=0.2.0
+langchain-core>=0.2.0
+
+# Provider integrations (install only what you need)
+langchain-openai>=0.1.0        # for OpenAI (gpt-4o, gpt-4o-mini etc.)
+langchain-anthropic>=0.1.0     # for Anthropic (claude-3-5-sonnet etc.)
+langchain-ollama>=0.1.0        # for Ollama (local models — qwen2.5, llama3 etc.)
+
+# Agent framework
+langgraph>=0.1.0
+
+# Data validation
+pydantic>=2.0.0
+
+# Environment config (optional — only if using .env file)
+python-dotenv>=1.0.0
