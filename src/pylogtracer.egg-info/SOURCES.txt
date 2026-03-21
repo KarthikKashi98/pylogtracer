@@ -1,0 +1,9 @@
+README.md
+pyproject.toml
+setup.cfg
+setup.py
+src/pylogtracer/__init__.py
+src/pylogtracer.egg-info/PKG-INFO
+src/pylogtracer.egg-info/SOURCES.txt
+src/pylogtracer.egg-info/dependency_links.txt
+src/pylogtracer.egg-info/top_level.txt
