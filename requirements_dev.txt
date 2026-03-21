@@ -1,0 +1,21 @@
+# Include all package dependencies first
+-r requirements.txt
+ 
+# Testing
+pytest>=7.0
+pytest-cov>=4.0
+ 
+# Linting
+flake8>=6.0
+ 
+# Type checking
+mypy>=1.0
+ 
+# Build + publish
+build>=1.0
+twine>=5.0
+ 
+# Tox
+tox>=4.0
+tox-gh-actions>=3.0
+ 
