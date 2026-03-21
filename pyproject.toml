@@ -7,7 +7,7 @@ name            = "pylogtracer"
 version         = "0.1.0"
 description     = "Provider-agnostic log analysis package with LLM support and LangGraph ReAct agent"
 readme          = "README.md"
-license         = { text = "MIT" }
+license         = "MIT"
 requires-python = ">=3.9"
  
 authors = [
