@@ -80,13 +80,17 @@ where   = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-verbosity = 2
+addopts = "-v"
+
 [tool.mypy]
 python_version = "3.9"
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
 check_untyped_defs = false
+mypy_path = "src"
+namespace_packages = true
+explicit_package_bases = true
 
 [[tool.mypy.overrides]]
 module = "pylogtracer.preprocessing.error_type_classifier"
