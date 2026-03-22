@@ -115,3 +115,12 @@ disable_error_code = ["no-any-return"]
 [[tool.mypy.overrides]]
 module = "pylogtracer.agents.root_cause_analyzer"
 disable_error_code = ["no-any-return"]
+
+# Third-party packages - ignore errors
+[[tool.mypy.overrides]]
+module = "pytest.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "_pytest.*"
+ignore_errors = true
