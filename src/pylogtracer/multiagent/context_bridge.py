@@ -91,7 +91,7 @@ class ContextBridge:
             }
         """
         retries_used = 0
-        extra_contexts = []  # accumulates extra lines across retries
+        extra_contexts: list[str] = []  # accumulates extra lines across retries
         extra_text = ""  # injected into analyzer on each retry
 
         while retries_used <= self.max_retries:

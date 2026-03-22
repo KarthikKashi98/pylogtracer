@@ -23,6 +23,7 @@ Usage:
 
 import re
 from datetime import datetime, timedelta
+from typing import Optional
 
 
 class get_file_content:
@@ -153,7 +154,7 @@ class get_file_content:
                         continue
             return None
 
-        def line_matches(line: str, check_fn) -> bool | None:
+        def line_matches(line: str, check_fn) -> Optional[bool]:
             ts = extract_timestamp(line)
             if ts is None:
                 return None  # no timestamp → continuation line
@@ -368,7 +369,7 @@ class get_file_content:
             return False
 
         entries = []
-        current = []
+        current: list[str] = []
 
         for line in lines:
             if has_timestamp(line):

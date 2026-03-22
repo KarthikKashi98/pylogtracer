@@ -33,8 +33,6 @@ Usage:
 
 from typing import Optional, Dict, List, Any
 
-
-
 from pylogtracer.preprocessing.smart_reader import get_file_content
 from pylogtracer.preprocessing.error_extractor import ErrorExtractor
 from pylogtracer.preprocessing.error_type_classifier import ErrorTypeClassifier
@@ -70,9 +68,11 @@ class LogTracer:
         self._factory = LLMFactory(llm_config)
 
         # Internal state — lazily populated
-        self._reader = None
-        self._extraction = None  # cached extraction result
-        self._last_filter = None  # track which filter was used for cache
+        self._reader: Any = None
+        self._extraction: Optional[Dict[str, Any]] = None  # cached extraction result
+        self._last_filter: Optional[  # track which filter was used for cache
+            tuple[Optional[str], Optional[str], Optional[str]]
+        ] = None
 
         # Persist classifier across ask() calls so keyword store survives
         # between questions — avoids re-learning same keywords every call
@@ -476,7 +476,7 @@ class LogTracer:
             }
 
         # Parse each matched entry for full details
-        from preprocessing.error_extractor import ErrorExtractor
+        from pylogtracer.preprocessing.error_extractor import ErrorExtractor
 
         extractor = ErrorExtractor()
         entries = []

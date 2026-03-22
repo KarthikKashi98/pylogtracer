@@ -81,3 +81,33 @@ where   = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 verbosity = 2
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+check_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = "pylogtracer.preprocessing.error_type_classifier"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "pylogtracer.multiagent.context_bridge"
+disable_error_code = ["no-any-return"]
+
+[[tool.mypy.overrides]]
+module = "pylogtracer.llm.llm_factory"
+disable_error_code = ["no-any-return"]
+
+[[tool.mypy.overrides]]
+module = "pylogtracer.logtracer"
+disable_error_code = ["no-any-return"]
+
+[[tool.mypy.overrides]]
+module = "pylogtracer.preprocessing.smart_reader"
+disable_error_code = ["no-any-return"]
+
+[[tool.mypy.overrides]]
+module = "pylogtracer.agents.root_cause_analyzer"
+disable_error_code = ["no-any-return"]

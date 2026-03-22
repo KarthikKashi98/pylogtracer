@@ -253,7 +253,8 @@ class QAAgent:
         # Fallback to last AI message
         for msg in reversed(state["messages"]):
             if isinstance(msg, AIMessage):
-                return {**state, "final_answer": msg.content}
+                answer_str: str = msg.content if isinstance(msg.content, str) else str(msg.content)
+                return {**state, "final_answer": answer_str}
 
         return {**state, "final_answer": "No answer generated."}
 
@@ -308,9 +309,13 @@ class QAAgent:
             return t.get_entry_details(idf)
 
         else:
-            return {
-                "error": f"Unknown tool: {tool_name}. Available: error_frequency, errors_by_date, errors_in_range, last_incident, summary, root_cause, health_check, incident_duration, search, get_related_logs, get_entry_details"
-            }
+            msg = (
+                f"Unknown tool: {tool_name}. Available: error_frequency, "
+                f"errors_by_date, errors_in_range, last_incident, summary, "
+                f"root_cause, health_check, incident_duration, search, "
+                f"get_related_logs, get_entry_details"
+            )
+            return {"error": msg}
 
     # ─────────────────────────────────────────────────────────────
     # PRIVATE — helpers
@@ -341,6 +346,10 @@ class QAAgent:
 
     def _extract_final_answer(self, content: str) -> str:
         """Extract text after FINAL_ANSWER: — strips any leaked system prompt."""
+        # Ensure content is a string
+        if not isinstance(content, str):
+            content = str(content)
+
         m = re.search(r"FINAL_ANSWER:\s*(.+)", content, re.DOTALL)
         if not m:
             return content.strip()
@@ -372,7 +381,8 @@ class QAAgent:
         """Get content of last AIMessage."""
         for msg in reversed(messages):
             if isinstance(msg, AIMessage):
-                return msg.content if hasattr(msg, "content") else str(msg)
+                content = msg.content if hasattr(msg, "content") else str(msg)
+                return str(content) if not isinstance(content, str) else content
         return ""
 
     def _safe_args(self, args: dict, allowed: list) -> dict:

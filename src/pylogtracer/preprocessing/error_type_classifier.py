@@ -32,17 +32,17 @@ import math
 from typing import List, Dict, Optional, Tuple
 
 try:
-    from pydantic import BaseModel, Field
+    from pydantic import BaseModel, Field  # type: ignore
     from langchain_core.prompts import ChatPromptTemplate
 
     LANGCHAIN_AVAILABLE = True
 except ImportError:
     LANGCHAIN_AVAILABLE = False
 
-    class BaseModel:  # noqa: E742
+    class BaseModel:  # noqa: E742, type: ignore
         pass
 
-    def Field(**kw):  # noqa: E302,E731
+    def Field(**kw):  # noqa: E302, type: ignore  # pragma: no cover
         return None
 
 
@@ -249,13 +249,13 @@ class ErrorTypeClassifier:
                 print(f"              [{idx}] {classification.error_type} (keywords: {len(classification.keywords)})")
 
             for i, entry in enumerate(batch):
-                classification = result.get(str(i + 1))
-                if not classification:
-                    print(f"  [Classifier]   [WARN] Entry {i+1} missing from LLM result")
+                classification_item = result.get(str(i + 1))
+                if not classification_item:
+                    print(f"  [Classifier]   [WARN] Entry {i + 1} missing from LLM result")
                     continue
 
-                llm_type = self._normalize_type(classification.error_type)
-                keywords = classification.keywords
+                llm_type = self._normalize_type(classification_item.error_type)
+                keywords = classification_item.keywords
 
                 # If LLM classified as NonError, mark it and skip learning
                 if llm_type == "NonError":

@@ -43,11 +43,14 @@ from dotenv import load_dotenv
 
 # LangChain base types
 try:
-    from langchain_core.language_models import BaseChatModel
-    from pydantic import BaseModel
+    from langchain_core.language_models import BaseChatModel as LangChainBaseChatModel
+    from pydantic import BaseModel as PydanticBaseModel
 except ImportError:
-    BaseChatModel = object
-    BaseModel = object
+    LangChainBaseChatModel = object  # type: ignore
+    PydanticBaseModel = object  # type: ignore
+
+BaseChatModel = LangChainBaseChatModel
+BaseModel = PydanticBaseModel
 
 # Load .env for testing
 load_dotenv()
@@ -146,6 +149,8 @@ class LLMFactory:
 
         elif provider == PROVIDER_CUSTOM:
             return self._build_custom(model, api_key, base_url, temperature, max_tokens)
+        else:
+            raise ValueError(f"Unsupported provider: {provider}")
 
     def _build_openai(self, model, api_key, base_url, temperature, max_tokens):
         from langchain_openai import ChatOpenAI

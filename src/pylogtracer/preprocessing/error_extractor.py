@@ -255,7 +255,9 @@ class ErrorExtractor:
                     target_ci = type_to_cluster[etype]
                     if target_ci != ci and merged_clusters[target_ci] is not None:
                         print(f"  [Extractor] Merging cluster {ci} into cluster " f"{target_ci} (duplicate type: {etype})")
-                        merged_clusters[target_ci].extend(cluster)
+                        target_cluster = merged_clusters[target_ci]
+                        if target_cluster is not None:
+                            target_cluster.extend(cluster)
                         merged_clusters[ci] = None  # mark as absorbed
                         break
 
