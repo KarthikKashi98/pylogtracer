@@ -50,18 +50,19 @@ from typing import TypedDict, Optional, List, Any
 try:
     from langgraph.graph import StateGraph, START, END
     from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+
     LANGGRAPH_AVAILABLE = True
 except ImportError:
     LANGGRAPH_AVAILABLE = False
 
-MAX_STEPS = 8   # max tool calls per question
+MAX_STEPS = 8  # max tool calls per question
 
 
 # ── Agent state ───────────────────────────────────────────────────
 class AgentState(TypedDict):
-    question:     str
-    messages:     List[Any]
-    steps_taken:  int
+    question: str
+    messages: List[Any]
+    steps_taken: int
     final_answer: Optional[str]
 
 
@@ -116,9 +117,9 @@ class QAAgent:
     """
 
     def __init__(self, tracer, factory):
-        self.tracer  = tracer
+        self.tracer = tracer
         self.factory = factory
-        self._graph  = None
+        self._graph = None
 
     # ─────────────────────────────────────────────────────────────
     # PUBLIC
@@ -131,32 +132,34 @@ class QAAgent:
         Calls as many tools as needed to fully answer.
         """
         if not LANGGRAPH_AVAILABLE:
-            raise ImportError(
-                "LangGraph not installed. "
-                "Run: pip install langgraph langchain-core"
-            )
+            raise ImportError("LangGraph not installed. " "Run: pip install langgraph langchain-core")
 
         # Resolve relative time before passing to agent
         from pylogtracer.utils.time_resolver import TimeResolver
+
         resolved = TimeResolver().resolve(question)
         enriched = resolved["enriched_question"]
 
         if resolved["resolved"]:
-            print(f"  [QAAgent] Time resolved: "
-                  f"from={resolved['from_dt']} | "
-                  f"to={resolved['to_dt']} | "
-                  f"date={resolved['date']}")
+            print(
+                f"  [QAAgent] Time resolved: "
+                f"from={resolved['from_dt']} | "
+                f"to={resolved['to_dt']} | "
+                f"date={resolved['date']}"
+            )
 
         graph = self._get_graph()
-        state = graph.invoke({
-            "question":     enriched,
-            "messages": [
-                SystemMessage(content=SYSTEM_PROMPT),
-                HumanMessage(content=enriched),
-            ],
-            "steps_taken":  0,
-            "final_answer": None,
-        })
+        state = graph.invoke(
+            {
+                "question": enriched,
+                "messages": [
+                    SystemMessage(content=SYSTEM_PROMPT),
+                    HumanMessage(content=enriched),
+                ],
+                "steps_taken": 0,
+                "final_answer": None,
+            }
+        )
 
         return state["final_answer"] or "I could not find an answer."
 
@@ -176,9 +179,9 @@ class QAAgent:
             return {**state, "final_answer": f"Based on what I found:\n\n{summary}"}
 
         try:
-            llm      = self.factory.get_llm()
+            llm = self.factory.get_llm()
             response = llm.invoke(state["messages"])
-            content  = response.content if hasattr(response, "content") else str(response)
+            content = response.content if hasattr(response, "content") else str(response)
 
             step = state["steps_taken"] + 1
             preview = content[:100].replace("\n", " ").strip()
@@ -209,14 +212,11 @@ class QAAgent:
             result = {"error": f"Tool failed: {e}"}
             print(f"  [QAAgent] Tool error: {e}")
 
-        result_text = (
-            f"TOOL_RESULT [{tool_name}]:\n"
-            f"{json.dumps(result, indent=2, default=str)}"
-        )
+        result_text = f"TOOL_RESULT [{tool_name}]:\n" f"{json.dumps(result, indent=2, default=str)}"
 
         return {
             **state,
-            "messages":   state["messages"] + [HumanMessage(content=result_text)],
+            "messages": state["messages"] + [HumanMessage(content=result_text)],
             "steps_taken": state["steps_taken"] + 1,
         }
 
@@ -275,7 +275,7 @@ class QAAgent:
 
         elif tool_name == "errors_in_range":
             from_dt = args.get("from_dt")
-            to_dt   = args.get("to_dt")
+            to_dt = args.get("to_dt")
             if not from_dt or not to_dt:
                 return {"error": "from_dt and to_dt required"}
             return self._fmt_errors(t.errors_in_range(from_dt, to_dt))
@@ -308,7 +308,9 @@ class QAAgent:
             return t.get_entry_details(idf)
 
         else:
-            return {"error": f"Unknown tool: {tool_name}. Available: error_frequency, errors_by_date, errors_in_range, last_incident, summary, root_cause, health_check, incident_duration, search, get_related_logs, get_entry_details"}
+            return {
+                "error": f"Unknown tool: {tool_name}. Available: error_frequency, errors_by_date, errors_in_range, last_incident, summary, root_cause, health_check, incident_duration, search, get_related_logs, get_entry_details"
+            }
 
     # ─────────────────────────────────────────────────────────────
     # PRIVATE — helpers
@@ -316,31 +318,30 @@ class QAAgent:
 
     def _parse_tool_call(self, content: str):
         """Parse TOOL name and ARGS dict from LLM response."""
-        tool_m = re.search(r'TOOL:\s*(\w+)', content)
-        args_m = re.search(r'ARGS:\s*(\{.*?\})', content, re.DOTALL)
+        tool_m = re.search(r"TOOL:\s*(\w+)", content)
+        args_m = re.search(r"ARGS:\s*(\{.*?\})", content, re.DOTALL)
 
         if not tool_m:
             return None, {}
 
         tool_name = tool_m.group(1).strip()
-        args      = {}
+        args = {}
 
         if args_m:
             try:
-                raw  = args_m.group(1).strip()
+                raw = args_m.group(1).strip()
                 args = json.loads(raw)
-                args = {k: v for k, v in args.items()
-                        if v is not None and v != "null" and v != ""}
+                args = {k: v for k, v in args.items() if v is not None and v != "null" and v != ""}
             except json.JSONDecodeError:
                 # Manual extraction fallback
                 pairs = re.findall(r'"(\w+)":\s*"([^"]+)"', args_m.group(1))
-                args  = dict(pairs)
+                args = dict(pairs)
 
         return tool_name, args
 
     def _extract_final_answer(self, content: str) -> str:
         """Extract text after FINAL_ANSWER: — strips any leaked system prompt."""
-        m = re.search(r'FINAL_ANSWER:\s*(.+)', content, re.DOTALL)
+        m = re.search(r"FINAL_ANSWER:\s*(.+)", content, re.DOTALL)
         if not m:
             return content.strip()
 
@@ -376,28 +377,25 @@ class QAAgent:
 
     def _safe_args(self, args: dict, allowed: list) -> dict:
         """Filter args to only allowed keys with non-empty values."""
-        return {k: v for k, v in args.items()
-                if k in allowed and v and v != "null"}
+        return {k: v for k, v in args.items() if k in allowed and v and v != "null"}
 
     def _fmt_errors(self, errors: list) -> list:
         """Serialize error list — convert datetimes to strings."""
         out = []
         for e in errors:
-            out.append({
-                "timestamp":     e["timestamp"].strftime("%Y-%m-%d %H:%M:%S")
-                                 if e.get("timestamp") else None,
-                "error_type":    e.get("error_type"),
-                "primary_error": e.get("primary_error"),
-                "traceback":     e.get("traceback", ""),
-            })
+            out.append(
+                {
+                    "timestamp": e["timestamp"].strftime("%Y-%m-%d %H:%M:%S") if e.get("timestamp") else None,
+                    "error_type": e.get("error_type"),
+                    "primary_error": e.get("primary_error"),
+                    "traceback": e.get("traceback", ""),
+                }
+            )
         return out
 
     def _summarize_results(self, messages: list) -> str:
         """Collect all TOOL_RESULT blocks from history."""
-        blocks = [
-            msg.content for msg in messages
-            if hasattr(msg, "content") and "TOOL_RESULT" in msg.content
-        ]
+        blocks = [msg.content for msg in messages if hasattr(msg, "content") and "TOOL_RESULT" in msg.content]
         return "\n\n".join(blocks) if blocks else "No results collected."
 
     # ─────────────────────────────────────────────────────────────
@@ -411,21 +409,17 @@ class QAAgent:
 
         builder = StateGraph(AgentState)
 
-        builder.add_node("think",    self._node_think)
-        builder.add_node("tool",     self._node_tool)
+        builder.add_node("think", self._node_think)
+        builder.add_node("tool", self._node_tool)
         builder.add_node("finalize", self._node_finalize)
 
-        builder.add_edge(START,   "think")
+        builder.add_edge(START, "think")
 
         # think → tool (if TOOL found) OR finalize (if FINAL_ANSWER)
-        builder.add_conditional_edges(
-            "think",
-            self._node_check,
-            {"tool": "tool", "end": "finalize"}
-        )
+        builder.add_conditional_edges("think", self._node_check, {"tool": "tool", "end": "finalize"})
 
         # tool → think (ReAct loop)
-        builder.add_edge("tool",     "think")
+        builder.add_edge("tool", "think")
         builder.add_edge("finalize", END)
 
         self._graph = builder.compile()

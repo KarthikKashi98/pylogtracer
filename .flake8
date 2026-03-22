@@ -1,0 +1,10 @@
+[flake8]
+max-line-length = 127
+max-complexity = 15
+exclude = .git,__pycache__,build,dist,.tox,.eggs
+ignore = E203,W503
+per-file-ignores =
+    src/pylogtracer/agents/qa_agent.py:C901,F541
+    src/pylogtracer/multiagent/context_bridge.py:F541
+    src/pylogtracer/preprocessing/smart_reader.py:C901
+    src/pylogtracer/preprocessing/error_type_classifier.py:F541,E501

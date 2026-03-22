@@ -58,18 +58,30 @@ from typing import Optional, Dict
 
 # ── Month name map ────────────────────────────────────────────────
 MONTHS = {
-    "january": 1,  "jan": 1,
-    "february": 2, "feb": 2,
-    "march": 3,    "mar": 3,
-    "april": 4,    "apr": 4,
+    "january": 1,
+    "jan": 1,
+    "february": 2,
+    "feb": 2,
+    "march": 3,
+    "mar": 3,
+    "april": 4,
+    "apr": 4,
     "may": 5,
-    "june": 6,     "jun": 6,
-    "july": 7,     "jul": 7,
-    "august": 8,   "aug": 8,
-    "september": 9,"sep": 9, "sept": 9,
-    "october": 10, "oct": 10,
-    "november": 11,"nov": 11,
-    "december": 12,"dec": 12,
+    "june": 6,
+    "jun": 6,
+    "july": 7,
+    "jul": 7,
+    "august": 8,
+    "aug": 8,
+    "september": 9,
+    "sep": 9,
+    "sept": 9,
+    "october": 10,
+    "oct": 10,
+    "november": 11,
+    "nov": 11,
+    "december": 12,
+    "dec": 12,
 }
 
 
@@ -107,26 +119,26 @@ class TimeResolver:
         result = {
             "original_question": question,
             "enriched_question": question,
-            "from_dt":           None,
-            "to_dt":             None,
-            "date":              None,
-            "resolved":          False,
+            "from_dt": None,
+            "to_dt": None,
+            "date": None,
+            "resolved": False,
         }
 
         # Try each resolver in priority order
         # Higher priority resolvers run first
         resolved = (
-            self._resolve_absolute_datetime(lower)   or   # "2024-03-01 10:00:00"
-            self._resolve_absolute_date(lower)        or   # "2024-03-01", "March 1"
-            self._resolve_duration_ago(lower)         or   # "2 hours ago"
-            self._resolve_last_duration(lower)        or   # "last 30 minutes"
-            self._resolve_time_of_day_named(lower)    or   # "this morning/afternoon/evening/night"
-            self._resolve_last_night(lower)           or   # "last night"
-            self._resolve_yesterday_with_time(lower)  or   # "yesterday at 10am"
-            self._resolve_today_with_time(lower)      or   # "today at 10am"
-            self._resolve_yesterday(lower)            or   # "yesterday" alone
-            self._resolve_today(lower)                or   # "today" alone
-            self._resolve_clock_time(lower)               # "10am", "2:30pm"
+            self._resolve_absolute_datetime(lower)  # "2024-03-01 10:00:00"
+            or self._resolve_absolute_date(lower)  # "2024-03-01", "March 1"
+            or self._resolve_duration_ago(lower)  # "2 hours ago"
+            or self._resolve_last_duration(lower)  # "last 30 minutes"
+            or self._resolve_time_of_day_named(lower)  # "this morning/afternoon/evening/night"
+            or self._resolve_last_night(lower)  # "last night"
+            or self._resolve_yesterday_with_time(lower)  # "yesterday at 10am"
+            or self._resolve_today_with_time(lower)  # "today at 10am"
+            or self._resolve_yesterday(lower)  # "yesterday" alone
+            or self._resolve_today(lower)  # "today" alone
+            or self._resolve_clock_time(lower)  # "10am", "2:30pm"
         )
 
         if resolved:
@@ -142,7 +154,7 @@ class TimeResolver:
 
     def _resolve_absolute_datetime(self, text: str) -> Optional[Dict]:
         """2024-03-01 10:00:00 or 2024-03-01T10:00:00"""
-        pattern = r'(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}(?::\d{2})?)'
+        pattern = r"(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}(?::\d{2})?)"
         m = re.search(pattern, text)
         if m:
             dt_str = f"{m.group(1)} {m.group(2)}"
@@ -150,41 +162,38 @@ class TimeResolver:
                 dt_str += ":00"
             return {
                 "from_dt": dt_str,
-                "to_dt":   dt_str,
-                "date":    m.group(1),
+                "to_dt": dt_str,
+                "date": m.group(1),
             }
         return None
 
     def _resolve_absolute_date(self, text: str) -> Optional[Dict]:
         """2024-03-01 or March 1 or Mar 1"""
         # ISO format
-        m = re.search(r'\b(\d{4}-\d{2}-\d{2})\b', text)
+        m = re.search(r"\b(\d{4}-\d{2}-\d{2})\b", text)
         if m:
             return {
                 "from_dt": None,
-                "to_dt":   None,
-                "date":    m.group(1),
+                "to_dt": None,
+                "date": m.group(1),
             }
 
         # "March 1" or "Mar 1" or "1 March"
-        month_pattern = '|'.join(MONTHS.keys())
-        m = re.search(
-            rf'\b({month_pattern})\s+(\d{{1,2}})\b|\b(\d{{1,2}})\s+({month_pattern})\b',
-            text
-        )
+        month_pattern = "|".join(MONTHS.keys())
+        m = re.search(rf"\b({month_pattern})\s+(\d{{1,2}})\b|\b(\d{{1,2}})\s+({month_pattern})\b", text)
         if m:
             if m.group(1):
                 month_name, day = m.group(1), int(m.group(2))
             else:
                 day, month_name = int(m.group(3)), m.group(4)
             month_num = MONTHS[month_name]
-            year      = self._now.year
+            year = self._now.year
             try:
-                dt  = date(year, month_num, day)
+                dt = date(year, month_num, day)
                 return {
                     "from_dt": None,
-                    "to_dt":   None,
-                    "date":    dt.strftime("%Y-%m-%d"),
+                    "to_dt": None,
+                    "date": dt.strftime("%Y-%m-%d"),
                 }
             except ValueError:
                 pass
@@ -192,14 +201,11 @@ class TimeResolver:
 
     def _resolve_duration_ago(self, text: str) -> Optional[Dict]:
         """'2 hours ago', 'an hour ago', '30 minutes ago', '5 mins ago'"""
-        m = re.search(
-            r'\b(an?|\d+)\s+(hour|hr|minute|min|second|sec)s?\s+ago\b',
-            text
-        )
+        m = re.search(r"\b(an?|\d+)\s+(hour|hr|minute|min|second|sec)s?\s+ago\b", text)
         if m:
             amount_str = m.group(1)
-            unit       = m.group(2)
-            amount     = 1 if amount_str in ("a", "an") else int(amount_str)
+            unit = m.group(2)
+            amount = 1 if amount_str in ("a", "an") else int(amount_str)
 
             if unit in ("hour", "hr"):
                 delta = timedelta(hours=amount)
@@ -211,21 +217,18 @@ class TimeResolver:
             from_dt = self._now - delta
             return {
                 "from_dt": self._fmt(from_dt),
-                "to_dt":   self._fmt(self._now),
-                "date":    from_dt.strftime("%Y-%m-%d"),
+                "to_dt": self._fmt(self._now),
+                "date": from_dt.strftime("%Y-%m-%d"),
             }
         return None
 
     def _resolve_last_duration(self, text: str) -> Optional[Dict]:
         """'last 30 minutes', 'last 2 hours', 'past hour'"""
-        m = re.search(
-            r'\b(?:last|past)\s+(\d+|an?)\s+(hour|hr|minute|min|second|sec)s?\b',
-            text
-        )
+        m = re.search(r"\b(?:last|past)\s+(\d+|an?)\s+(hour|hr|minute|min|second|sec)s?\b", text)
         if m:
             amount_str = m.group(1)
-            unit       = m.group(2)
-            amount     = 1 if amount_str in ("a", "an") else int(amount_str)
+            unit = m.group(2)
+            amount = 1 if amount_str in ("a", "an") else int(amount_str)
 
             if unit in ("hour", "hr"):
                 delta = timedelta(hours=amount)
@@ -237,8 +240,8 @@ class TimeResolver:
             from_dt = self._now - delta
             return {
                 "from_dt": self._fmt(from_dt),
-                "to_dt":   self._fmt(self._now),
-                "date":    from_dt.strftime("%Y-%m-%d"),
+                "to_dt": self._fmt(self._now),
+                "date": from_dt.strftime("%Y-%m-%d"),
             }
         return None
 
@@ -259,11 +262,11 @@ class TimeResolver:
         """'last night'"""
         if "last night" in text:
             yesterday = (self._now - timedelta(days=1)).date()
-            today     = self._now.date()
+            today = self._now.date()
             return {
                 "from_dt": f"{yesterday} 20:00:00",
-                "to_dt":   f"{today} 06:00:00",
-                "date":    str(yesterday),
+                "to_dt": f"{today} 06:00:00",
+                "date": str(yesterday),
             }
         return None
 
@@ -275,11 +278,11 @@ class TimeResolver:
         time_info = self._extract_clock_time(text)
         if time_info:
             from_dt = datetime.combine(yesterday, time_info["from_time"])
-            to_dt   = datetime.combine(yesterday, time_info["to_time"])
+            to_dt = datetime.combine(yesterday, time_info["to_time"])
             return {
                 "from_dt": self._fmt(from_dt),
-                "to_dt":   self._fmt(to_dt),
-                "date":    str(yesterday),
+                "to_dt": self._fmt(to_dt),
+                "date": str(yesterday),
             }
         return None
 
@@ -287,15 +290,15 @@ class TimeResolver:
         """'today at 10am', 'today 2:30pm'"""
         if "today" not in text:
             return None
-        today     = self._now.date()
+        today = self._now.date()
         time_info = self._extract_clock_time(text)
         if time_info:
             from_dt = datetime.combine(today, time_info["from_time"])
-            to_dt   = datetime.combine(today, time_info["to_time"])
+            to_dt = datetime.combine(today, time_info["to_time"])
             return {
                 "from_dt": self._fmt(from_dt),
-                "to_dt":   self._fmt(to_dt),
-                "date":    str(today),
+                "to_dt": self._fmt(to_dt),
+                "date": str(today),
             }
         return None
 
@@ -305,8 +308,8 @@ class TimeResolver:
             yesterday = (self._now - timedelta(days=1)).date()
             return {
                 "from_dt": None,
-                "to_dt":   None,
-                "date":    str(yesterday),
+                "to_dt": None,
+                "date": str(yesterday),
             }
         return None
 
@@ -315,8 +318,8 @@ class TimeResolver:
         if "today" in text:
             return {
                 "from_dt": None,
-                "to_dt":   None,
-                "date":    str(self._now.date()),
+                "to_dt": None,
+                "date": str(self._now.date()),
             }
         return None
 
@@ -325,15 +328,15 @@ class TimeResolver:
         '10am', '2pm', '10:30am', '14:00' — anchored to TODAY.
         This is the key fix: no date context = defaults to today.
         """
-        today     = self._now.date()
+        today = self._now.date()
         time_info = self._extract_clock_time(text)
         if time_info:
             from_dt = datetime.combine(today, time_info["from_time"])
-            to_dt   = datetime.combine(today, time_info["to_time"])
+            to_dt = datetime.combine(today, time_info["to_time"])
             return {
                 "from_dt": self._fmt(from_dt),
-                "to_dt":   self._fmt(to_dt),
-                "date":    str(today),
+                "to_dt": self._fmt(to_dt),
+                "date": str(today),
             }
         return None
 
@@ -351,37 +354,37 @@ class TimeResolver:
         from datetime import time as dtime
 
         # HH:MMam/pm
-        m = re.search(r'\b(\d{1,2}):(\d{2})\s*(am|pm)?\b', text)
+        m = re.search(r"\b(\d{1,2}):(\d{2})\s*(am|pm)?\b", text)
         if m:
             h, minute = int(m.group(1)), int(m.group(2))
-            meridiem  = m.group(3)
+            meridiem = m.group(3)
             h = self._to_24h(h, meridiem)
             if 0 <= h <= 23:
                 return {
                     "from_time": dtime(h, minute, 0),
-                    "to_time":   dtime(h, 59, 59),
+                    "to_time": dtime(h, 59, 59),
                 }
 
         # HHam/pm (no minutes)
-        m = re.search(r'\b(\d{1,2})\s*(am|pm)\b', text)
+        m = re.search(r"\b(\d{1,2})\s*(am|pm)\b", text)
         if m:
-            h        = int(m.group(1))
+            h = int(m.group(1))
             meridiem = m.group(2)
             h = self._to_24h(h, meridiem)
             if 0 <= h <= 23:
                 return {
                     "from_time": dtime(h, 0, 0),
-                    "to_time":   dtime(h, 59, 59),
+                    "to_time": dtime(h, 59, 59),
                 }
 
         # "at 10" or "at 14" — no am/pm
-        m = re.search(r'\bat\s+(\d{1,2})\b', text)
+        m = re.search(r"\bat\s+(\d{1,2})\b", text)
         if m:
             h = int(m.group(1))
             if 0 <= h <= 23:
                 return {
                     "from_time": dtime(h, 0, 0),
-                    "to_time":   dtime(h, 59, 59),
+                    "to_time": dtime(h, 59, 59),
                 }
 
         return None
@@ -399,14 +402,15 @@ class TimeResolver:
     def _day_range(self, day: date, from_h: int, to_h: int) -> Dict:
         """Return from/to covering hours from_h to to_h on given day."""
         from datetime import time as dtime
+
         if to_h == 24:
             to_dt = datetime.combine(day + timedelta(days=1), dtime(0, 0, 0))
         else:
             to_dt = datetime.combine(day, dtime(to_h, 0, 0))
         return {
             "from_dt": self._fmt(datetime.combine(day, dtime(from_h, 0, 0))),
-            "to_dt":   self._fmt(to_dt),
-            "date":    str(day),
+            "to_dt": self._fmt(to_dt),
+            "date": str(day),
         }
 
     def _fmt(self, dt: datetime) -> str:

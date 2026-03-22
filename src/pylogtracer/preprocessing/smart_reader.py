@@ -30,11 +30,11 @@ class get_file_content:
         if from_dt and not to_dt:
             to_dt = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.relative_day = relative_day
-        self.date         = date
-        self.from_dt      = from_dt
-        self.to_dt        = to_dt
-        self._last_file   = None   # set when fetch_logs_by_date() is called
-        self._all_lines   = []     # cached for fetch_lines_around() agent callback
+        self.date = date
+        self.from_dt = from_dt
+        self.to_dt = to_dt
+        self._last_file = None  # set when fetch_logs_by_date() is called
+        self._all_lines = []  # cached for fetch_lines_around() agent callback
 
     def _pick_datetime(self):
         now = datetime.now()
@@ -59,30 +59,37 @@ class get_file_content:
 
         elif self.from_dt and self.to_dt:
             range_formats = [
-                "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M",
-                "%Y-%m-%d", "%d-%m-%Y %H:%M:%S", "%d-%m-%Y",
+                "%Y-%m-%d %H:%M:%S",
+                "%Y-%m-%d %H:%M",
+                "%Y-%m-%d",
+                "%d-%m-%Y %H:%M:%S",
+                "%d-%m-%Y",
             ]
             f = t = None
             for fmt in range_formats:
                 try:
-                    f = datetime.strptime(self.from_dt, fmt); break
+                    f = datetime.strptime(self.from_dt, fmt)
+                    break
                 except ValueError:
                     pass
             for fmt in range_formats:
                 try:
-                    t = datetime.strptime(self.to_dt, fmt); break
+                    t = datetime.strptime(self.to_dt, fmt)
+                    break
                 except ValueError:
                     pass
 
-            if f is None: return "Invalid from_dt format"
-            if t is None: return "Invalid to_dt format"
+            if f is None:
+                return "Invalid from_dt format"
+            if t is None:
+                return "Invalid to_dt format"
             if len(self.to_dt) == 10:
                 t = t.replace(hour=23, minute=59, second=59)
             if f > t:
                 return "from_dt cannot be greater than to_dt"
             return {
                 "from": f.strftime("%Y-%m-%d %H:%M:%S"),
-                "to":   t.strftime("%Y-%m-%d %H:%M:%S"),
+                "to": t.strftime("%Y-%m-%d %H:%M:%S"),
             }
         return None
 
@@ -115,23 +122,25 @@ class get_file_content:
         if no_filter:
             entries = self._group_into_entries(lines)
             return {
-                "file":          file_path,
-                "filter":        None,
+                "file": file_path,
+                "filter": None,
                 "total_matched": len(entries),
-                "logs":          entries,
+                "logs": entries,
             }
 
         pick_date = self._pick_datetime()
 
         TIMESTAMP_PATTERNS = [
-            r'\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}',
-            r'\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}',
-            r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}',
-            r'\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}',
+            r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}",
+            r"\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}",
+            r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}",
+            r"\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}",
         ]
         TIMESTAMP_FORMATS = [
-            "%Y-%m-%d %H:%M:%S", "%d-%m-%Y %H:%M:%S",
-            "%Y-%m-%dT%H:%M:%S", "%Y/%m/%d %H:%M:%S",
+            "%Y-%m-%d %H:%M:%S",
+            "%d-%m-%Y %H:%M:%S",
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y/%m/%d %H:%M:%S",
         ]
 
         def extract_timestamp(line: str):
@@ -147,7 +156,7 @@ class get_file_content:
         def line_matches(line: str, check_fn) -> bool | None:
             ts = extract_timestamp(line)
             if ts is None:
-                return None        # no timestamp → continuation line
+                return None  # no timestamp → continuation line
             return check_fn(ts)
 
         if pick_date is None:
@@ -158,41 +167,47 @@ class get_file_content:
         # Build check function
         if isinstance(pick_date, str) and len(pick_date) == 10:
             target_date = datetime.strptime(pick_date, "%Y-%m-%d").date()
-            def check(ts): return ts.date() == target_date
+
+            def check(ts):
+                return ts.date() == target_date
 
         elif isinstance(pick_date, str):
             target_dt = datetime.strptime(pick_date, "%Y-%m-%d %H:%M:%S")
-            def check(ts): return abs((ts - target_dt).total_seconds()) <= 60
+
+            def check(ts):
+                return abs((ts - target_dt).total_seconds()) <= 60
 
         elif isinstance(pick_date, dict):
             from_dt = datetime.strptime(pick_date["from"], "%Y-%m-%d %H:%M:%S")
-            to_dt   = datetime.strptime(pick_date["to"],   "%Y-%m-%d %H:%M:%S")
-            def check(ts): return from_dt <= ts <= to_dt
+            to_dt = datetime.strptime(pick_date["to"], "%Y-%m-%d %H:%M:%S")
+
+            def check(ts):
+                return from_dt <= ts <= to_dt
 
         else:
             return {"error": f"Unsupported pick_date type: {type(pick_date)}"}
 
         # Filter lines — keep continuation lines (no timestamp) after a matched line
         matched_lines = []
-        inside_match  = False
+        inside_match = False
         for line in lines:
             result = line_matches(line, check)
             if result is True:
                 inside_match = True
                 matched_lines.append(line.rstrip())
             elif result is None and inside_match:
-                matched_lines.append(line.rstrip())   # continuation/traceback line
+                matched_lines.append(line.rstrip())  # continuation/traceback line
             elif result is False:
-                inside_match = False                  # new timestamped line, didn't match
+                inside_match = False  # new timestamped line, didn't match
 
         # Group into logical entries (timestamp + continuation lines)
         entries = self._group_into_entries(matched_lines)
 
         return {
-            "file":          file_path,
-            "filter":        pick_date,
+            "file": file_path,
+            "filter": pick_date,
             "total_matched": len(entries),
-            "logs":          entries,
+            "logs": entries,
         }
 
     def fetch_lines_around(self, timestamp: str, context_lines: int = 10) -> dict:
@@ -217,10 +232,10 @@ class get_file_content:
             return {"error": "No file loaded yet. Call fetch_logs_by_date() first."}
 
         TIMESTAMP_PATTERNS = [
-            (r'\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}', "%Y-%m-%d %H:%M:%S"),
-            (r'\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}', "%d-%m-%Y %H:%M:%S"),
-            (r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}', "%Y-%m-%dT%H:%M:%S"),
-            (r'\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}', "%Y/%m/%d %H:%M:%S"),
+            (r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", "%Y-%m-%d %H:%M:%S"),
+            (r"\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}", "%d-%m-%Y %H:%M:%S"),
+            (r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", "%Y-%m-%dT%H:%M:%S"),
+            (r"\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}", "%Y/%m/%d %H:%M:%S"),
         ]
 
         def extract_ts(line):
@@ -246,7 +261,7 @@ class get_file_content:
             return {"error": f"Could not parse timestamp: {timestamp}"}
 
         # Find the closest line to that timestamp
-        best_idx  = None
+        best_idx = None
         best_diff = float("inf")
         for i, line in enumerate(self._all_lines):
             ts = extract_ts(line)
@@ -254,26 +269,26 @@ class get_file_content:
                 diff = abs((ts - target).total_seconds())
                 if diff < best_diff:
                     best_diff = diff
-                    best_idx  = i
+                    best_idx = i
 
-        if best_idx is None or best_diff > 300:   # >5 min away = not found
+        if best_idx is None or best_diff > 300:  # >5 min away = not found
             return {
-                "timestamp":     timestamp,
+                "timestamp": timestamp,
                 "context_lines": context_lines,
-                "lines":         "",
-                "found":         False,
+                "lines": "",
+                "found": False,
             }
 
         # Grab surrounding lines
         start = max(0, best_idx - context_lines)
-        end   = min(len(self._all_lines), best_idx + context_lines + 1)
+        end = min(len(self._all_lines), best_idx + context_lines + 1)
         surrounding = self._all_lines[start:end]
 
         return {
-            "timestamp":     timestamp,
+            "timestamp": timestamp,
             "context_lines": context_lines,
-            "lines":         "\n".join(l.rstrip() for l in surrounding),
-            "found":         True,
+            "lines": "\n".join(line_item.rstrip() for line_item in surrounding),
+            "found": True,
         }
 
     def search_logs(self, keyword: str, max_results: int = 20) -> dict:
@@ -301,18 +316,15 @@ class get_file_content:
         all_entries = self._group_into_entries(self._all_lines)
 
         # Filter entries containing the keyword
-        matched = [
-            entry for entry in all_entries
-            if keyword_lower in entry.lower()
-        ]
+        matched = [entry for entry in all_entries if keyword_lower in entry.lower()]
 
         # Reverse — most recent first
         matched = list(reversed(matched))[:max_results]
 
         return {
-            "keyword":     keyword,
+            "keyword": keyword,
             "total_found": len(matched),
-            "entries":     matched,
+            "entries": matched,
         }
 
     def _group_into_entries(self, lines: list) -> list:
@@ -338,10 +350,10 @@ class get_file_content:
         import re as _re
 
         TS_PATTERNS = [
-            (r'\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}', '%Y-%m-%d %H:%M:%S'),
-            (r'\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}', '%d-%m-%Y %H:%M:%S'),
-            (r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}', '%Y-%m-%dT%H:%M:%S'),
-            (r'\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}', '%Y/%m/%d %H:%M:%S'),
+            (r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", "%Y-%m-%d %H:%M:%S"),
+            (r"\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}", "%d-%m-%Y %H:%M:%S"),
+            (r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", "%Y-%m-%dT%H:%M:%S"),
+            (r"\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}", "%Y/%m/%d %H:%M:%S"),
         ]
 
         def has_timestamp(line: str) -> bool:
@@ -361,7 +373,7 @@ class get_file_content:
         for line in lines:
             if has_timestamp(line):
                 if current:
-                    entries.append('\n'.join(current))
+                    entries.append("\n".join(current))
                 current = [line.rstrip()]
             else:
                 # Continuation line (traceback etc.) — attach to current entry
@@ -370,6 +382,6 @@ class get_file_content:
                 # If no current entry yet, skip (header lines before first timestamp)
 
         if current:
-            entries.append('\n'.join(current))
+            entries.append("\n".join(current))
 
         return entries

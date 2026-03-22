@@ -31,20 +31,20 @@ class ErrorExtractor:
     Each entry is a string (one timestamp line + its continuation lines).
     """
 
-    ERROR_WORDS    = ["error", "exception", "failed", "critical", "fatal"]
+    ERROR_WORDS = ["error", "exception", "failed", "critical", "fatal"]
     TRACEBACK_WORD = "traceback"
 
     TIMESTAMP_PATTERNS = [
-        (r'\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}', "%Y-%m-%d %H:%M:%S"),
-        (r'\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}', "%d-%m-%Y %H:%M:%S"),
-        (r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}', "%Y-%m-%dT%H:%M:%S"),
-        (r'\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}', "%Y/%m/%d %H:%M:%S"),
+        (r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", "%Y-%m-%d %H:%M:%S"),
+        (r"\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}", "%d-%m-%Y %H:%M:%S"),
+        (r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", "%Y-%m-%dT%H:%M:%S"),
+        (r"\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}", "%Y/%m/%d %H:%M:%S"),
     ]
 
     def __init__(
         self,
-        gap_seconds:  int                          = 60,
-        classifier:   Optional[ErrorTypeClassifier] = None,
+        gap_seconds: int = 60,
+        classifier: Optional[ErrorTypeClassifier] = None,
     ):
         """
         Args:
@@ -52,7 +52,7 @@ class ErrorExtractor:
             classifier:   ErrorTypeClassifier instance. If None, uses regex only.
         """
         self.gap_seconds = gap_seconds
-        self.classifier  = classifier   # None = regex-only mode
+        self.classifier = classifier  # None = regex-only mode
 
     # ─────────────────────────────────────────────────────────────
     # PUBLIC
@@ -84,10 +84,10 @@ class ErrorExtractor:
 
         if not all_errors:
             return {
-                "all_errors":   [],
-                "clusters":     [],
+                "all_errors": [],
+                "clusters": [],
                 "last_cluster": None,
-                "frequency":    {},
+                "frequency": {},
                 "total_errors": 0,
             }
 
@@ -104,10 +104,10 @@ class ErrorExtractor:
         frequency = self._count_frequency(all_errors)
 
         return {
-            "all_errors":   all_errors,
-            "clusters":     clusters,
+            "all_errors": all_errors,
+            "clusters": clusters,
             "last_cluster": clusters[-1] if clusters else None,
-            "frequency":    frequency,
+            "frequency": frequency,
             "total_errors": len(all_errors),
         }
 
@@ -127,19 +127,19 @@ class ErrorExtractor:
         Parse a single grouped entry into structured format.
         error_type is set by regex here — classifier may override it later.
         """
-        chain      = self._extract_chain(entry)
-        timestamp  = self._extract_timestamp(entry)
+        chain = self._extract_chain(entry)
+        timestamp = self._extract_timestamp(entry)
         # Regex classification as initial value — classifier overrides if needed
         error_type = self._regex_classify(chain["primary"])
 
         return {
             "primary_error": chain["primary"],
-            "traceback":     chain["traceback"],
-            "timestamp":     timestamp,
-            "error_type":    error_type,
-            "type_source":   "regex" if error_type != "UnknownError" else "pending",
-            "is_duplicate":  False,
-            "full_entry":    entry.strip(),
+            "traceback": chain["traceback"],
+            "timestamp": timestamp,
+            "error_type": error_type,
+            "type_source": "regex" if error_type != "UnknownError" else "pending",
+            "is_duplicate": False,
+            "full_entry": entry.strip(),
         }
 
     def _extract_chain(self, entry: str) -> Dict:
@@ -149,9 +149,9 @@ class ErrorExtractor:
           traceback     = everything from 'Traceback' onwards
         Traceback is guaranteed to be here because smart_reader grouped it.
         """
-        lines             = entry.splitlines()
-        primary_error     = None
-        traceback_lines   = []
+        lines = entry.splitlines()
+        primary_error = None
+        traceback_lines = []
         traceback_started = False
 
         for line in lines:
@@ -166,7 +166,7 @@ class ErrorExtractor:
                 traceback_lines.append(line)
 
         return {
-            "primary":   primary_error or "unknown_error",
+            "primary": primary_error or "unknown_error",
             "traceback": "\n".join(traceback_lines),
         }
 
@@ -175,10 +175,7 @@ class ErrorExtractor:
         Fast regex classification for named exceptions.
         Returns "UnknownError" if no named exception found.
         """
-        match = re.search(
-            r'\b([A-Z][a-zA-Z]+(?:Error|Exception|Warning|Critical|Fatal))\b',
-            error_line
-        )
+        match = re.search(r"\b([A-Z][a-zA-Z]+(?:Error|Exception|Warning|Critical|Fatal))\b", error_line)
         return match.group(1) if match else "UnknownError"
 
     # ─────────────────────────────────────────────────────────────
@@ -199,7 +196,7 @@ class ErrorExtractor:
     # PRIVATE — clustering with duplicate merge
     # ─────────────────────────────────────────────────────────────
 
-    def _cluster_and_merge(self, errors: List[Dict]) -> List[List[Dict]]:
+    def _cluster_and_merge(self, errors: List[Dict]) -> List[List[Dict]]:  # noqa: C901
         """
         Group errors into clusters by TWO rules:
 
@@ -218,8 +215,8 @@ class ErrorExtractor:
             return []
 
         # First pass — time-based clustering
-        clusters      = []
-        current       = [errors[0]]
+        clusters = []
+        current = [errors[0]]
 
         for prev, curr in zip(errors, errors[1:]):
             tp = prev["timestamp"]
@@ -228,7 +225,7 @@ class ErrorExtractor:
             if tp and tc:
                 split = abs((tc - tp).total_seconds()) > self.gap_seconds
             else:
-                split = False   # no timestamps → keep together
+                split = False  # no timestamps → keep together
 
             if split:
                 clusters.append(current)
@@ -248,7 +245,7 @@ class ErrorExtractor:
             for error in cluster:
                 etype = error["error_type"]
                 if etype == "UnknownError":
-                    continue   # don't merge unknowns blindly
+                    continue  # don't merge unknowns blindly
 
                 if etype not in type_to_cluster:
                     # First time seeing this type — register this cluster
@@ -257,10 +254,9 @@ class ErrorExtractor:
                     # Already seen in an earlier cluster → merge into it
                     target_ci = type_to_cluster[etype]
                     if target_ci != ci and merged_clusters[target_ci] is not None:
-                        print(f"  [Extractor] Merging cluster {ci} into cluster "
-                              f"{target_ci} (duplicate type: {etype})")
+                        print(f"  [Extractor] Merging cluster {ci} into cluster " f"{target_ci} (duplicate type: {etype})")
                         merged_clusters[target_ci].extend(cluster)
-                        merged_clusters[ci] = None   # mark as absorbed
+                        merged_clusters[ci] = None  # mark as absorbed
                         break
 
         # Clean up absorbed clusters + sort each cluster by timestamp

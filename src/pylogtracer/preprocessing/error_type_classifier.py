@@ -34,55 +34,81 @@ from typing import List, Dict, Optional, Tuple
 try:
     from pydantic import BaseModel, Field
     from langchain_core.prompts import ChatPromptTemplate
+
     LANGCHAIN_AVAILABLE = True
 except ImportError:
     LANGCHAIN_AVAILABLE = False
-    BaseModel = object
-    Field     = lambda **kw: None
+
+    class BaseModel:  # noqa: E742
+        pass
+
+    def Field(**kw):  # noqa: E302,E731
+        return None
 
 
 # ── Model context windows ─────────────────────────────────────────
 MODEL_CONTEXT_WINDOWS = {
-    "qwen2.5:1.8b":               2048,
-    "qwen2.5:3b":                 4096,
-    "qwen2.5:7b":                 8192,
-    "qwen2.5:14b":               16384,
-    "qwen2.5:32b":               32768,
-    "qwen2.5:72b":               65536,
-    "gpt-4o":                    16384,
-    "gpt-4o-mini":               16384,
-    "gpt-3.5-turbo":              4096,
+    "qwen2.5:1.8b": 2048,
+    "qwen2.5:3b": 4096,
+    "qwen2.5:7b": 8192,
+    "qwen2.5:14b": 16384,
+    "qwen2.5:32b": 32768,
+    "qwen2.5:72b": 65536,
+    "gpt-4o": 16384,
+    "gpt-4o-mini": 16384,
+    "gpt-3.5-turbo": 4096,
     "claude-3-5-sonnet-20241022": 65536,
-    "claude-3-5-haiku-20241022":  65536,
+    "claude-3-5-haiku-20241022": 65536,
 }
 
-PROMPT_OVERHEAD_TOKENS = 400   # slightly higher — prompt now asks for keywords too
-TOKENS_PER_ENTRY       = 60
-MAX_BATCH_SIZE         = 20
-MIN_BATCH_SIZE         = 3
+PROMPT_OVERHEAD_TOKENS = 400  # slightly higher — prompt now asks for keywords too
+TOKENS_PER_ENTRY = 60
+MAX_BATCH_SIZE = 20
+MIN_BATCH_SIZE = 3
 
 # Keyword validation
-MIN_KEYWORD_LEN        = 3
-MIN_KEYWORD_WORDS      = 1     # single word ok if specific enough
-MAX_KEYWORD_WORDS      = 6     # avoid full sentences
-STOP_WORDS             = {
-    "the", "in", "at", "for", "on", "an", "a", "is", "was",
-    "to", "of", "and", "or", "not", "with", "from", "by",
-    "error", "failed", "exception", "warning"   # too generic on their own
+MIN_KEYWORD_LEN = 3
+MIN_KEYWORD_WORDS = 1  # single word ok if specific enough
+MAX_KEYWORD_WORDS = 6  # avoid full sentences
+STOP_WORDS = {
+    "the",
+    "in",
+    "at",
+    "for",
+    "on",
+    "an",
+    "a",
+    "is",
+    "was",
+    "to",
+    "of",
+    "and",
+    "or",
+    "not",
+    "with",
+    "from",
+    "by",
+    "error",
+    "failed",
+    "exception",
+    "warning",  # too generic on their own
 }
 
 
 # ── Pydantic schema ───────────────────────────────────────────────
 class EntryClassification(BaseModel):
     """Classification for a single error entry."""
+
     error_type: str = Field(description="PascalCase error type label")
-    keywords:   List[str] = Field(
+    keywords: List[str] = Field(
         description="2-4 short phrases from this error message that identify this error type. "
-                    "Phrases should be specific enough to match similar future errors."
+        "Phrases should be specific enough to match similar future errors."
     )
+
 
 class BatchClassification(BaseModel):
     """LLM response schema for a full batch."""
+
     classifications: Dict[str, EntryClassification] = Field(
         description="Map of entry index (string '1','2'...) to its classification"
     )
@@ -100,29 +126,27 @@ class ErrorTypeClassifier:
         factory: LLMFactory instance. None = regex-only mode.
     """
 
-    NAMED_EXCEPTION_RE = re.compile(
-        r'\b([A-Z][a-zA-Z]+(?:Error|Exception|Warning|Critical|Fatal))\b'
-    )
+    NAMED_EXCEPTION_RE = re.compile(r"\b([A-Z][a-zA-Z]+(?:Error|Exception|Warning|Critical|Fatal))\b")
 
     # Pattern-based fallback classifiers (for when LLM not available)
     PATTERN_MATCHERS = [
-        (r'(?:timeout|timed out|time limit|time out)', 'TimeoutError'),
-        (r'(?:connection|connect|refused|unreachable|tcp|socket)', 'ConnectionError'),
-        (r'(?:authentication|unauthorized|auth failed|401|invalid.*credentials)', 'AuthenticationError'),
-        (r'(?:permission|denied|403|forbidden|access denied)', 'PermissionError'),
-        (r'(?:not found|404|no such|doesn\'t exist|cannot find)', 'NotFoundError'),
-        (r'(?:memory|out of memory|oom|malloc failed|heap)', 'MemoryError'),
-        (r'(?:disk|storage|space full|io error|file system)', 'DiskError'),
-        (r'(?:database|db|postgres|mysql|sql|query|transaction)', 'DatabaseError'),
-        (r'(?:network|socket|tcp|udp|http|request|response)', 'NetworkError'),
-        (r'(?:api|endpoint|rest|json|xml|parse)', 'APIError'),
-        (r'(?:type mismatch|type error|incompatible)', 'TypeError'),
-        (r'(?:invalid|value error|bad value|invalid format)', 'ValueError'),
-        (r'(?:index|out of range|out of bounds)', 'IndexError'),
-        (r'(?:null|none|undefined|nil|not initialized)', 'NullPointerException'),
-        (r'(?:runtime|fatal|crash|panic|segmentation)', 'RuntimeError'),
-        (r'(?:deadlock|race condition|concurrency)', 'ConcurrencyError'),
-        (r'(?:deprecated|unsupported|not implemented)', 'NotImplementedError'),
+        (r"(?:timeout|timed out|time limit|time out)", "TimeoutError"),
+        (r"(?:connection|connect|refused|unreachable|tcp|socket)", "ConnectionError"),
+        (r"(?:authentication|unauthorized|auth failed|401|invalid.*credentials)", "AuthenticationError"),
+        (r"(?:permission|denied|403|forbidden|access denied)", "PermissionError"),
+        (r"(?:not found|404|no such|doesn\'t exist|cannot find)", "NotFoundError"),
+        (r"(?:memory|out of memory|oom|malloc failed|heap)", "MemoryError"),
+        (r"(?:disk|storage|space full|io error|file system)", "DiskError"),
+        (r"(?:database|db|postgres|mysql|sql|query|transaction)", "DatabaseError"),
+        (r"(?:network|socket|tcp|udp|http|request|response)", "NetworkError"),
+        (r"(?:api|endpoint|rest|json|xml|parse)", "APIError"),
+        (r"(?:type mismatch|type error|incompatible)", "TypeError"),
+        (r"(?:invalid|value error|bad value|invalid format)", "ValueError"),
+        (r"(?:index|out of range|out of bounds)", "IndexError"),
+        (r"(?:null|none|undefined|nil|not initialized)", "NullPointerException"),
+        (r"(?:runtime|fatal|crash|panic|segmentation)", "RuntimeError"),
+        (r"(?:deadlock|race condition|concurrency)", "ConcurrencyError"),
+        (r"(?:deprecated|unsupported|not implemented)", "NotImplementedError"),
     ]
 
     # Prompt built lazily in _get_structured_llm() — avoids LangChain import at class load time
@@ -139,7 +163,7 @@ class ErrorTypeClassifier:
     # PUBLIC
     # ─────────────────────────────────────────────────────────────
 
-    def classify(self, error_entries: List[Dict]) -> List[Dict]:
+    def classify(self, error_entries: List[Dict]) -> List[Dict]:  # noqa: C901
         """
         Classify error_type for each error entry.
 
@@ -156,9 +180,9 @@ class ErrorTypeClassifier:
             # Pass 1 — named exception regex
             regex_type = self._regex_classify(entry["primary_error"])
             if regex_type:
-                entry["error_type"]   = regex_type
+                entry["error_type"] = regex_type
                 entry["is_duplicate"] = False
-                entry["type_source"]  = "regex"
+                entry["type_source"] = "regex"
                 continue
 
             # Pass 2 — scored keyword store match
@@ -166,39 +190,37 @@ class ErrorTypeClassifier:
 
             if kw_status == "match":
                 # Clear winner
-                entry["error_type"]   = kw_result
+                entry["error_type"] = kw_result
                 entry["is_duplicate"] = True
-                entry["type_source"]  = "keyword"
+                entry["type_source"] = "keyword"
                 continue
 
             elif kw_status == "tie":
                 # Ambiguous — equal score for multiple types
                 # Send to LLM with candidate types as hint
-                entry["error_type"]      = "UnknownError"
-                entry["is_duplicate"]    = False
-                entry["type_source"]     = "pending_llm_tie"
-                entry["_tie_candidates"] = kw_result   # list of tied types
+                entry["error_type"] = "UnknownError"
+                entry["is_duplicate"] = False
+                entry["type_source"] = "pending_llm_tie"
+                entry["_tie_candidates"] = kw_result  # list of tied types
                 needs_llm.append(entry)
                 continue
 
             # Pass 3 — truly unknown, no keyword match
             # Send to LLM to decide (even if INFO/DEBUG — human might have mislabeled)
-            entry["error_type"]   = "UnknownError"
+            entry["error_type"] = "UnknownError"
             entry["is_duplicate"] = False
-            entry["type_source"]  = "pending_llm"
+            entry["type_source"] = "pending_llm"
             needs_llm.append(entry)
 
-        regex_count   = sum(1 for e in error_entries if e["type_source"] == "regex")
+        regex_count = sum(1 for e in error_entries if e["type_source"] == "regex")
         keyword_count = sum(1 for e in error_entries if e["type_source"] == "keyword")
-        llm_count     = len(needs_llm)
+        llm_count = len(needs_llm)
 
-        print(f"  [Classifier] regex={regex_count} | "
-              f"keyword_store={keyword_count} | "
-              f"llm_needed={llm_count}")
+        print(f"  [Classifier] regex={regex_count} | " f"keyword_store={keyword_count} | " f"llm_needed={llm_count}")
 
         if not needs_llm:
             return error_entries
-        
+
         if self.factory is None:
             print("  [Classifier] ⚠️  No LLM factory configured")
             print("              Using only pattern-based classification (above)")
@@ -207,22 +229,18 @@ class ErrorTypeClassifier:
 
         # Pass 3 — LLM batch
         batch_size = self._compute_batch_size()
-        print(f"  [Classifier] model={self.factory.get_model()} | "
-              f"batch_size={batch_size}")
+        print(f"  [Classifier] model={self.factory.get_model()} | " f"batch_size={batch_size}")
 
         seen_types: Dict[str, Dict] = {}
-        batches = [needs_llm[i:i + batch_size]
-                   for i in range(0, len(needs_llm), batch_size)]
+        batches = [needs_llm[i : i + batch_size] for i in range(0, len(needs_llm), batch_size)]
 
         for batch_num, batch in enumerate(batches, 1):
-            print(f"  [Classifier] Batch {batch_num}/{len(batches)} "
-                  f"({len(batch)} entries)...")
+            print(f"  [Classifier] Batch {batch_num}/{len(batches)} " f"({len(batch)} entries)...")
 
             result = self._classify_batch(batch)
 
             if not result:
-                print(f"  [Classifier] Batch {batch_num} failed — "
-                      f"keeping UnknownError")
+                print(f"  [Classifier] Batch {batch_num} failed — " f"keeping UnknownError")
                 continue
 
             # Debug: show what LLM returned
@@ -237,13 +255,13 @@ class ErrorTypeClassifier:
                     continue
 
                 llm_type = self._normalize_type(classification.error_type)
-                keywords  = classification.keywords
+                keywords = classification.keywords
 
                 # If LLM classified as NonError, mark it and skip learning
                 if llm_type == "NonError":
-                    entry["error_type"]   = "NonError"
+                    entry["error_type"] = "NonError"
                     entry["is_duplicate"] = False
-                    entry["type_source"]  = "llm_non_error"
+                    entry["type_source"] = "llm_non_error"
                     print(f"  [Classifier]   Classified as NonError: '{entry['primary_error'][:60]}...'")
                     continue
 
@@ -253,18 +271,21 @@ class ErrorTypeClassifier:
                 valid_kws = self._validate_keywords(keywords)
                 if valid_kws:
                     self._learn_keywords(llm_type, valid_kws)
-                    print(f"  [Classifier]   >> Learned {len(valid_kws)} keyword(s) for {llm_type}: {valid_kws}")
+                    print(
+                        f"  [Classifier]   >> Learned {len(valid_kws)} "
+                        f"keyword(s) for {llm_type}: {valid_kws}"
+                    )
 
                 if llm_type != "UnknownError" and llm_type in seen_types:
-                    entry["error_type"]      = llm_type
-                    entry["is_duplicate"]    = True
+                    entry["error_type"] = llm_type
+                    entry["is_duplicate"] = True
                     entry["duplicate_of_ts"] = seen_types[llm_type].get("timestamp")
-                    entry["type_source"]     = "llm_duplicate"
+                    entry["type_source"] = "llm_duplicate"
                 else:
-                    entry["error_type"]   = llm_type
+                    entry["error_type"] = llm_type
                     entry["is_duplicate"] = False
-                    entry["type_source"]  = "llm"
-                    seen_types[llm_type]  = entry
+                    entry["type_source"] = "llm"
+                    seen_types[llm_type] = entry
 
         return error_entries
 
@@ -279,17 +300,17 @@ class ErrorTypeClassifier:
     def _regex_classify(self, error_line: str) -> Optional[str]:
         """Try multiple strategies to classify error without LLM."""
         lower = error_line.lower()
-        
+
         # Strategy 1: Named exception class (e.g., ConnectionError, ValueError)
         match = self.NAMED_EXCEPTION_RE.search(error_line)
         if match:
             return match.group(1)
-        
+
         # Strategy 2: Pattern-based matching (fallback when no exception class found)
         for pattern, error_type in self.PATTERN_MATCHERS:
             if re.search(pattern, lower):
                 return error_type
-        
+
         return None
 
     def _keyword_store_classify(self, error_line: str) -> Tuple[Optional[object], str]:
@@ -308,7 +329,7 @@ class ErrorTypeClassifier:
             status="tie"      → equal scores, winner=list of tied type strings → LLM decides
             status="no_match" → nothing matched, winner=None
         """
-        lower  = error_line.lower()
+        lower = error_line.lower()
         scores: Dict[str, int] = {}
         match_counts: Dict[str, int] = {}
         match_lengths: Dict[str, int] = {}
@@ -316,14 +337,14 @@ class ErrorTypeClassifier:
         for error_type, keywords in self._keyword_store.items():
             match_count = 0
             match_length = 0
-            
+
             for kw in keywords:
                 # Use word boundary regex — exact phrase matching
-                pattern = r'\b' + re.escape(kw.lower()) + r'\b'
+                pattern = r"\b" + re.escape(kw.lower()) + r"\b"
                 if re.search(pattern, lower):
                     match_count += 1
                     match_length += len(kw)
-            
+
             if match_count > 0:
                 scores[error_type] = match_count
                 match_counts[error_type] = match_count
@@ -333,21 +354,18 @@ class ErrorTypeClassifier:
             return None, "no_match"
 
         # Sort by: (1) match count DESC, (2) keyword length sum DESC
-        ranked = sorted(
-            scores.items(),
-            key=lambda x: (match_counts[x[0]], match_lengths[x[0]]),
-            reverse=True
-        )
+        ranked = sorted(scores.items(), key=lambda x: (match_counts[x[0]], match_lengths[x[0]]), reverse=True)
         best_type, best_score = ranked[0]
 
         # True tie — second type has the exact same match count AND length
         if len(ranked) > 1 and (
-            match_counts[ranked[1][0]] == match_counts[best_type] and
-            match_lengths[ranked[1][0]] == match_lengths[best_type]
+            match_counts[ranked[1][0]] == match_counts[best_type] and match_lengths[ranked[1][0]] == match_lengths[best_type]
         ):
-            tied = [t for t in scores.keys() 
-                    if match_counts[t] == match_counts[best_type] and
-                       match_lengths[t] == match_lengths[best_type]]
+            tied = [
+                t
+                for t in scores.keys()
+                if match_counts[t] == match_counts[best_type] and match_lengths[t] == match_lengths[best_type]
+            ]
             return tied, "tie"
 
         return best_type, "match"
@@ -362,19 +380,17 @@ class ErrorTypeClassifier:
         Rejects keywords that are substrings of or contain other error type's keywords.
         """
         kw_lower = keyword.lower()
-        
+
         for other_type, other_keywords in self._keyword_store.items():
             if other_type == error_type:
                 continue
-            
+
             for other_kw in other_keywords:
                 other_lower = other_kw.lower()
                 # Reject if keywords are too similar
-                if (kw_lower in other_lower or 
-                    other_lower in kw_lower or
-                    kw_lower == other_lower):
+                if kw_lower in other_lower or other_lower in kw_lower or kw_lower == other_lower:
                     return False
-        
+
         return True
 
     def _validate_keywords(self, keywords: List[str]) -> List[str]:
@@ -401,11 +417,11 @@ class ErrorTypeClassifier:
                 continue
 
             # Reject pure digit / symbol strings
-            if re.match(r'^[\d\s\.\:\-\/]+$', kw):
+            if re.match(r"^[\d\s\.\:\-\/]+$", kw):
                 continue
 
             # Reject port-like patterns (5432, :5432, db:5432)
-            if re.search(r':\d+', kw):
+            if re.search(r":\d+", kw):
                 continue
 
             # Reject if single stop word
@@ -417,7 +433,7 @@ class ErrorTypeClassifier:
                 continue
 
             # Reject version strings (v1.2.3, 1.0.0)
-            if re.match(r'^v?\d+[\.\d]+$', kw):
+            if re.match(r"^v?\d+[\.\d]+$", kw):
                 continue
 
             valid.append(kw)
@@ -426,27 +442,27 @@ class ErrorTypeClassifier:
 
     def _learn_keywords(self, error_type: str, keywords: List[str]):
         """Add validated keywords to the store for this error type.
-        
+
         Only learns keywords that are unique enough to distinguish this error type
         from previously learned types.
         """
         if error_type not in self._keyword_store:
             self._keyword_store[error_type] = []
-        
+
         # Avoid duplicates and non-unique keywords
         existing = set(self._keyword_store[error_type])
         learned = []
-        
+
         for kw in keywords:
             if kw in existing:
                 continue
-            
+
             # Check uniqueness before adding
             if self._is_unique_keyword(kw, error_type):
                 self._keyword_store[error_type].append(kw)
                 existing.add(kw)
                 learned.append(kw)
-        
+
         if learned:
             print(f"  [Classifier]   Stored unique keywords: {learned}")
         else:
@@ -457,10 +473,10 @@ class ErrorTypeClassifier:
     # ─────────────────────────────────────────────────────────────
 
     def _compute_batch_size(self) -> int:
-        model   = self.factory.get_model() if self.factory else "default"
+        model = self.factory.get_model() if self.factory else "default"
         context = MODEL_CONTEXT_WINDOWS.get(model, 8192)
-        usable  = context - PROMPT_OVERHEAD_TOKENS
-        size    = math.floor(usable / TOKENS_PER_ENTRY)
+        usable = context - PROMPT_OVERHEAD_TOKENS
+        size = math.floor(usable / TOKENS_PER_ENTRY)
         return max(MIN_BATCH_SIZE, min(size, MAX_BATCH_SIZE))
 
     # ─────────────────────────────────────────────────────────────
@@ -497,17 +513,11 @@ class ErrorTypeClassifier:
                 "IMPORTANT: Classify ALL entries in the list. Return entries for all numeric indices.\n"
                 "Return only valid JSON matching the schema."
             )
-            prompt = ChatPromptTemplate.from_messages([
-                ("system", system_msg),
-                ("human", "{entries_text}")
-            ])
-            self._structured_llm = (
-                prompt
-                | self.factory.get_llm().with_structured_output(BatchClassification)
-            )
+            prompt = ChatPromptTemplate.from_messages([("system", system_msg), ("human", "{entries_text}")])
+            self._structured_llm = prompt | self.factory.get_llm().with_structured_output(BatchClassification)
         return self._structured_llm
 
-    def _classify_batch(self, batch: List[Dict]) -> Optional[Dict[str, EntryClassification]]:
+    def _classify_batch(self, batch: List[Dict]) -> Optional[Dict[str, EntryClassification]]:  # noqa: C901
         lines = []
         for i, entry in enumerate(batch):
             line = f"[{i + 1}] {entry['primary_error']}"
@@ -518,19 +528,19 @@ class ErrorTypeClassifier:
             lines.append(line)
 
         entries_text = "\n".join(lines)
-        
+
         try:
-            chain  = self._get_structured_llm()
+            chain = self._get_structured_llm()
             result = chain.invoke({"entries_text": entries_text})
-            
+
             # LLM may return classifications keyed by ID (INC2000003) or index (1, 2, 3)
             # Remap IDs to numeric indices for consistency
             classifications = result.classifications
             remapped = {}
-            
+
             # Check if keys are numeric strings
             numeric_keys = all(k.isdigit() for k in classifications.keys())
-            
+
             if not numeric_keys:
                 # Keys are probably IDs (INC2000003, etc)
                 # Map them back to indices [1], [2], etc
@@ -544,24 +554,24 @@ class ErrorTypeClassifier:
                         found = True
                         break  # Take first available
                     if not found:
-                        print(f"  [Classifier] [WARN] Could not map entry {orig_idx} from LLM keys: {list(classifications.keys())}")
+                        print(
+                            f"  [Classifier] [WARN] Could not map entry {orig_idx} from LLM keys: {list(classifications.keys())}"
+                        )
                 return remapped if remapped else classifications
-            
+
             return classifications
-            
+
         except Exception as e:
             print(f"  [Classifier] [ERROR] LLM call failed: {e}")
             import traceback
+
             traceback.print_exc()
             # On failure — fall back to first candidate
             fallback = {}
             for i, entry in enumerate(batch):
                 candidates = entry.get("_tie_candidates")
                 if candidates:
-                    fallback[str(i+1)] = type('obj', (object,), {
-                        'error_type': candidates[0],
-                        'keywords': []
-                    })()
+                    fallback[str(i + 1)] = type("obj", (object,), {"error_type": candidates[0], "keywords": []})()
             return fallback if fallback else None
 
     # ─────────────────────────────────────────────────────────────
@@ -572,11 +582,11 @@ class ErrorTypeClassifier:
         """Normalize error type to proper PascalCase."""
         # Remove any lowercase conversion first - preserve original case
         raw_type = raw_type.strip()
-        
+
         # Already properly formatted PascalCase?
-        if raw_type and raw_type[0].isupper() and '_' not in raw_type and '-' not in raw_type:
+        if raw_type and raw_type[0].isupper() and "_" not in raw_type and "-" not in raw_type:
             return raw_type or "UnknownError"
-        
+
         # Need to reformat - split on various delimiters and capitalize each word
-        words = re.split(r'[\s_\-]+', raw_type.lower())
+        words = re.split(r"[\s_\-]+", raw_type.lower())
         return "".join(w.capitalize() for w in words if w) or "UnknownError"

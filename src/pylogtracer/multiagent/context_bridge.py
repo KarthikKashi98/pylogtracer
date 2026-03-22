@@ -58,12 +58,12 @@ class ContextBridge:
         self,
         reader,
         analyzer,
-        max_retries:               int = MAX_RETRIES,
+        max_retries: int = MAX_RETRIES,
         context_lines_per_request: int = 15,
     ):
-        self.reader                    = reader
-        self.analyzer                  = analyzer
-        self.max_retries               = max_retries
+        self.reader = reader
+        self.analyzer = analyzer
+        self.max_retries = max_retries
         self.context_lines_per_request = context_lines_per_request
 
     # ─────────────────────────────────────────────────────────────
@@ -90,9 +90,9 @@ class ContextBridge:
                 "extra_contexts": list of timestamps fetched
             }
         """
-        retries_used   = 0
-        extra_contexts = []          # accumulates extra lines across retries
-        extra_text     = ""          # injected into analyzer on each retry
+        retries_used = 0
+        extra_contexts = []  # accumulates extra lines across retries
+        extra_text = ""  # injected into analyzer on each retry
 
         while retries_used <= self.max_retries:
 
@@ -109,13 +109,13 @@ class ContextBridge:
 
             if need_more is None:
                 # Qwen gave a final answer — we're done
-                result["retries_used"]   = retries_used
+                result["retries_used"] = retries_used
                 result["extra_contexts"] = extra_contexts
                 return result
 
             # ── Qwen wants more — ask SmartReader ─────────────────
             timestamp = need_more["timestamp"]
-            reason    = need_more["reason"]
+            reason = need_more["reason"]
 
             print(f"\n  [ContextBridge] Qwen needs more context:")
             print(f"    Timestamp : {timestamp}")
@@ -123,13 +123,13 @@ class ContextBridge:
             print(f"    Fetching  : ±{self.context_lines_per_request} lines from SmartReader...")
 
             fetch_result = self.reader.fetch_lines_around(
-                timestamp     = timestamp,
-                context_lines = self.context_lines_per_request,
+                timestamp=timestamp,
+                context_lines=self.context_lines_per_request,
             )
 
             if not fetch_result.get("found"):
                 print(f"  [ContextBridge] Timestamp not found in file — stopping retry.")
-                result["retries_used"]   = retries_used
+                result["retries_used"] = retries_used
                 result["extra_contexts"] = extra_contexts
                 return result
 
@@ -144,7 +144,7 @@ class ContextBridge:
 
         # Max retries hit — return whatever we have
         print(f"\n  [ContextBridge] Max retries ({self.max_retries}) reached.")
-        result["retries_used"]   = retries_used
+        result["retries_used"] = retries_used
         result["extra_contexts"] = extra_contexts
         return result
 
@@ -164,5 +164,5 @@ class ContextBridge:
 
         return {
             "timestamp": match.group(1).strip(),
-            "reason":    (match.group(2) or "").strip(),
+            "reason": (match.group(2) or "").strip(),
         }

@@ -44,8 +44,6 @@ from dotenv import load_dotenv
 # LangChain base types
 try:
     from langchain_core.language_models import BaseChatModel
-    from langchain_core.output_parsers  import JsonOutputParser
-    from langchain_core.prompts         import ChatPromptTemplate
     from pydantic import BaseModel
 except ImportError:
     BaseChatModel = object
@@ -56,20 +54,19 @@ load_dotenv()
 
 
 # ── Provider constants ────────────────────────────────────────────
-PROVIDER_OPENAI    = "openai"
+PROVIDER_OPENAI = "openai"
 PROVIDER_ANTHROPIC = "anthropic"
-PROVIDER_OLLAMA    = "ollama"
-PROVIDER_CUSTOM    = "custom"
+PROVIDER_OLLAMA = "ollama"
+PROVIDER_CUSTOM = "custom"
 
-SUPPORTED_PROVIDERS = {PROVIDER_OPENAI, PROVIDER_ANTHROPIC,
-                       PROVIDER_OLLAMA, PROVIDER_CUSTOM}
+SUPPORTED_PROVIDERS = {PROVIDER_OPENAI, PROVIDER_ANTHROPIC, PROVIDER_OLLAMA, PROVIDER_CUSTOM}
 
 # Default models per provider
 DEFAULT_MODELS = {
-    PROVIDER_OPENAI:    "gpt-4o-mini",
+    PROVIDER_OPENAI: "gpt-4o-mini",
     PROVIDER_ANTHROPIC: "claude-3-5-haiku-20241022",
-    PROVIDER_OLLAMA:    "qwen2.5:7b",
-    PROVIDER_CUSTOM:    "default",
+    PROVIDER_OLLAMA: "qwen2.5:7b",
+    PROVIDER_CUSTOM: "default",
 }
 
 
@@ -126,18 +123,15 @@ class LLMFactory:
     # ─────────────────────────────────────────────────────────────
 
     def _build_llm(self) -> BaseChatModel:
-        provider    = self.get_provider()
-        model       = self.get_model()
-        api_key     = self._resolve("api_key",     "LLM_API_KEY",     None)
-        base_url    = self._resolve("base_url",    "LLM_BASE_URL",    None)
+        provider = self.get_provider()
+        model = self.get_model()
+        api_key = self._resolve("api_key", "LLM_API_KEY", None)
+        base_url = self._resolve("base_url", "LLM_BASE_URL", None)
         temperature = float(self._resolve("temperature", "LLM_TEMPERATURE", 0.0))
-        max_tokens  = int(self._resolve("max_tokens",  "LLM_MAX_TOKENS",  1024))
+        max_tokens = int(self._resolve("max_tokens", "LLM_MAX_TOKENS", 1024))
 
         if provider not in SUPPORTED_PROVIDERS:
-            raise ValueError(
-                f"Unsupported provider '{provider}'. "
-                f"Choose from: {SUPPORTED_PROVIDERS}"
-            )
+            raise ValueError(f"Unsupported provider '{provider}'. " f"Choose from: {SUPPORTED_PROVIDERS}")
 
         print(f"  [LLMFactory] provider={provider} | model={model}")
 
@@ -155,32 +149,39 @@ class LLMFactory:
 
     def _build_openai(self, model, api_key, base_url, temperature, max_tokens):
         from langchain_openai import ChatOpenAI
+
         kwargs = dict(
-            model       = model,
-            temperature = temperature,
-            max_tokens  = max_tokens,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
         )
-        if api_key:  kwargs["api_key"]  = api_key
-        if base_url: kwargs["base_url"] = base_url
+        if api_key:
+            kwargs["api_key"] = api_key
+        if base_url:
+            kwargs["base_url"] = base_url
         return ChatOpenAI(**kwargs)
 
     def _build_anthropic(self, model, api_key, temperature, max_tokens):
         from langchain_anthropic import ChatAnthropic
+
         kwargs = dict(
-            model      = model,
-            temperature = temperature,
-            max_tokens  = max_tokens,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
         )
-        if api_key: kwargs["anthropic_api_key"] = api_key
+        if api_key:
+            kwargs["anthropic_api_key"] = api_key
         return ChatAnthropic(**kwargs)
 
     def _build_ollama(self, model, base_url, temperature):
         from langchain_ollama import ChatOllama
+
         kwargs = dict(
-            model       = model,
-            temperature = temperature,
+            model=model,
+            temperature=temperature,
         )
-        if base_url: kwargs["base_url"] = base_url
+        if base_url:
+            kwargs["base_url"] = base_url
         return ChatOllama(**kwargs)
 
     def _build_custom(self, model, api_key, base_url, temperature, max_tokens):
@@ -189,18 +190,17 @@ class LLMFactory:
         Uses ChatOpenAI with a custom base_url.
         """
         from langchain_openai import ChatOpenAI
+
         if not base_url:
-            raise ValueError(
-                "provider='custom' requires base_url. "
-                "Set LLM_BASE_URL env var or pass base_url in config."
-            )
+            raise ValueError("provider='custom' requires base_url. " "Set LLM_BASE_URL env var or pass base_url in config.")
         kwargs = dict(
-            model       = model,
-            base_url    = base_url,
-            temperature = temperature,
-            max_tokens  = max_tokens,
+            model=model,
+            base_url=base_url,
+            temperature=temperature,
+            max_tokens=max_tokens,
         )
-        if api_key: kwargs["api_key"] = api_key
+        if api_key:
+            kwargs["api_key"] = api_key
         return ChatOpenAI(**kwargs)
 
     # ─────────────────────────────────────────────────────────────

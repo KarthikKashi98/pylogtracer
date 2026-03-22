@@ -32,15 +32,15 @@ Usage:
 """
 
 from typing import Optional, Dict, List, Any
-from datetime import datetime
 
 
-from pylogtracer.preprocessing.smart_reader          import get_file_content
-from pylogtracer.preprocessing.error_extractor       import ErrorExtractor
+
+from pylogtracer.preprocessing.smart_reader import get_file_content
+from pylogtracer.preprocessing.error_extractor import ErrorExtractor
 from pylogtracer.preprocessing.error_type_classifier import ErrorTypeClassifier
-from pylogtracer.agents.root_cause_analyzer          import RootCauseAnalyzer
-from pylogtracer.multiagent.context_bridge           import ContextBridge
-from pylogtracer.llm.llm_factory                     import LLMFactory
+from pylogtracer.agents.root_cause_analyzer import RootCauseAnalyzer
+from pylogtracer.multiagent.context_bridge import ContextBridge
+from pylogtracer.llm.llm_factory import LLMFactory
 
 
 class LogTracer:
@@ -57,12 +57,12 @@ class LogTracer:
 
     def __init__(
         self,
-        file_path:   str,
-        llm_config:  Optional[Dict] = None,
-        gap_seconds: int            = 60,
-        max_retries: int            = 2,
+        file_path: str,
+        llm_config: Optional[Dict] = None,
+        gap_seconds: int = 60,
+        max_retries: int = 2,
     ):
-        self.file_path   = file_path
+        self.file_path = file_path
         self.gap_seconds = gap_seconds
         self.max_retries = max_retries
 
@@ -70,13 +70,13 @@ class LogTracer:
         self._factory = LLMFactory(llm_config)
 
         # Internal state — lazily populated
-        self._reader      = None
-        self._extraction  = None   # cached extraction result
-        self._last_filter = None   # track which filter was used for cache
+        self._reader = None
+        self._extraction = None  # cached extraction result
+        self._last_filter = None  # track which filter was used for cache
 
         # Persist classifier across ask() calls so keyword store survives
         # between questions — avoids re-learning same keywords every call
-        self._classifier  = ErrorTypeClassifier(factory=self._factory)
+        self._classifier = ErrorTypeClassifier(factory=self._factory)
 
     # ─────────────────────────────────────────────────────────────
     # PUBLIC — Library mode
@@ -84,9 +84,9 @@ class LogTracer:
 
     def error_frequency(
         self,
-        date:    Optional[str] = None,
+        date: Optional[str] = None,
         from_dt: Optional[str] = None,
-        to_dt:   Optional[str] = None,
+        to_dt: Optional[str] = None,
     ) -> Dict[str, int]:
         """
         Count how many times each error type occurred.
@@ -108,9 +108,9 @@ class LogTracer:
 
     def summary(
         self,
-        date:    Optional[str] = None,
+        date: Optional[str] = None,
         from_dt: Optional[str] = None,
-        to_dt:   Optional[str] = None,
+        to_dt: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         High-level summary of the log file or a filtered time range.
@@ -132,20 +132,20 @@ class LogTracer:
             tracer.summary(date="2024-03-01")
         """
         read_result = self._read(date=date, from_dt=from_dt, to_dt=to_dt)
-        extraction  = self._get_extraction(date=date, from_dt=from_dt, to_dt=to_dt)
+        extraction = self._get_extraction(date=date, from_dt=from_dt, to_dt=to_dt)
 
-        all_errors  = extraction["all_errors"]
-        timestamps  = [e["timestamp"] for e in all_errors if e["timestamp"]]
+        all_errors = extraction["all_errors"]
+        timestamps = [e["timestamp"] for e in all_errors if e["timestamp"]]
 
         return {
-            "total_entries":  read_result["total_matched"],
-            "total_errors":   extraction["total_errors"],
+            "total_entries": read_result["total_matched"],
+            "total_errors": extraction["total_errors"],
             "total_clusters": len(extraction["clusters"]),
-            "error_types":    list(extraction["frequency"].keys()),
-            "first_error":    min(timestamps).strftime("%Y-%m-%d %H:%M:%S") if timestamps else None,
-            "last_error":     max(timestamps).strftime("%Y-%m-%d %H:%M:%S") if timestamps else None,
-            "frequency":      extraction["frequency"],
-            "filter":         read_result["filter"],
+            "error_types": list(extraction["frequency"].keys()),
+            "first_error": min(timestamps).strftime("%Y-%m-%d %H:%M:%S") if timestamps else None,
+            "last_error": max(timestamps).strftime("%Y-%m-%d %H:%M:%S") if timestamps else None,
+            "frequency": extraction["frequency"],
+            "filter": read_result["filter"],
         }
 
     def errors_by_date(self, date: str) -> List[Dict]:
@@ -183,9 +183,9 @@ class LogTracer:
 
     def root_cause_analysis(
         self,
-        date:    Optional[str] = None,
+        date: Optional[str] = None,
         from_dt: Optional[str] = None,
-        to_dt:   Optional[str] = None,
+        to_dt: Optional[str] = None,
     ) -> Dict:
         """
         Analyze root cause of the last error cluster using LLM.
@@ -209,20 +209,16 @@ class LogTracer:
         if not extraction["all_errors"]:
             return {"error": "No errors found in the specified range."}
 
-        reader   = self._get_reader(date=date, from_dt=from_dt, to_dt=to_dt)
+        reader = self._get_reader(date=date, from_dt=from_dt, to_dt=to_dt)
         analyzer = RootCauseAnalyzer(factory=self._factory)
-        bridge   = ContextBridge(
-            reader      = reader,
-            analyzer    = analyzer,
-            max_retries = self.max_retries
-        )
+        bridge = ContextBridge(reader=reader, analyzer=analyzer, max_retries=self.max_retries)
         return bridge.run(extraction)
 
     def last_incident(
         self,
-        date:    Optional[str] = None,
+        date: Optional[str] = None,
         from_dt: Optional[str] = None,
-        to_dt:   Optional[str] = None,
+        to_dt: Optional[str] = None,
     ) -> List[Dict]:
         """
         Return the most recent error cluster (last incident).
@@ -274,46 +270,44 @@ class LogTracer:
             tracer.health_check()
         """
         extraction = self._get_extraction()
-        total      = extraction["total_errors"]
-        last       = extraction["last_cluster"]
+        total = extraction["total_errors"]
+        last = extraction["last_cluster"]
 
         if total == 0:
             return {
-                "healthy":         True,
-                "status":          "OK",
-                "total_errors":    0,
-                "last_error":      None,
+                "healthy": True,
+                "status": "OK",
+                "total_errors": 0,
+                "last_error": None,
                 "last_error_type": None,
-                "summary":         "No errors found. System appears healthy.",
+                "summary": "No errors found. System appears healthy.",
             }
 
-        last_error      = last[-1] if last else None
-        last_ts         = last_error["timestamp"].strftime("%Y-%m-%d %H:%M:%S") if last_error and last_error["timestamp"] else None
+        last_error = last[-1] if last else None
+        last_ts = last_error["timestamp"].strftime("%Y-%m-%d %H:%M:%S") if last_error and last_error["timestamp"] else None
         last_error_type = last_error["error_type"] if last_error else None
 
         # CRITICAL if any CRITICAL/FATAL in last cluster
         has_critical = any(
-            "critical" in e["primary_error"].lower() or
-            "fatal"    in e["primary_error"].lower()
-            for e in (last or [])
+            "critical" in e["primary_error"].lower() or "fatal" in e["primary_error"].lower() for e in (last or [])
         )
 
         status = "CRITICAL" if has_critical else "WARNING"
 
         return {
-            "healthy":         False,
-            "status":          status,
-            "total_errors":    total,
-            "last_error":      last_ts,
+            "healthy": False,
+            "status": status,
+            "total_errors": total,
+            "last_error": last_ts,
             "last_error_type": last_error_type,
-            "summary":         f"{status}: {total} error(s) found. Last error: {last_error_type} at {last_ts}.",
+            "summary": f"{status}: {total} error(s) found. Last error: {last_error_type} at {last_ts}.",
         }
 
     def incident_duration(
         self,
-        date:    Optional[str] = None,
+        date: Optional[str] = None,
         from_dt: Optional[str] = None,
-        to_dt:   Optional[str] = None,
+        to_dt: Optional[str] = None,
     ) -> Dict:
         """
         Calculate how long the last incident lasted.
@@ -331,7 +325,7 @@ class LogTracer:
             tracer.incident_duration()
         """
         extraction = self._get_extraction(date=date, from_dt=from_dt, to_dt=to_dt)
-        last       = extraction.get("last_cluster") or []
+        last = extraction.get("last_cluster") or []
 
         if not last:
             return {"error": "No incident found."}
@@ -340,8 +334,8 @@ class LogTracer:
         if not timestamps:
             return {"error": "No timestamps in last cluster."}
 
-        start    = min(timestamps)
-        end      = max(timestamps)
+        start = min(timestamps)
+        end = max(timestamps)
         duration = int((end - start).total_seconds())
 
         # Human readable
@@ -355,11 +349,11 @@ class LogTracer:
             human = f"{secs} second(s)"
 
         return {
-            "start":            start.strftime("%Y-%m-%d %H:%M:%S"),
-            "end":              end.strftime("%Y-%m-%d %H:%M:%S"),
+            "start": start.strftime("%Y-%m-%d %H:%M:%S"),
+            "end": end.strftime("%Y-%m-%d %H:%M:%S"),
             "duration_seconds": duration,
-            "duration_human":   human,
-            "error_count":      len(last),
+            "duration_human": human,
+            "error_count": len(last),
         }
 
     def get_related_logs(self, identifier: str) -> Dict:
@@ -390,9 +384,9 @@ class LogTracer:
         if not search_result.get("entries"):
             return {
                 "identifier": identifier,
-                "found":      False,
+                "found": False,
                 "anchor_entry": None,
-                "cluster":    [],
+                "cluster": [],
                 "cluster_index": None,
                 "total_in_cluster": 0,
             }
@@ -401,19 +395,19 @@ class LogTracer:
 
         # Step 2 — get extraction (clusters already computed)
         extraction = self._get_extraction()
-        clusters   = extraction.get("clusters", [])
+        clusters = extraction.get("clusters", [])
 
         # Step 3 — find which cluster contains the anchor entry
         # Match by checking if anchor text appears in any cluster entry
         anchor_lower = anchor_raw.lower()[:80]  # first 80 chars as fingerprint
 
-        matched_cluster       = None
+        matched_cluster = None
         matched_cluster_index = None
 
         for ci, cluster in enumerate(clusters):
             for error in cluster:
                 if anchor_lower in error.get("full_entry", "").lower():
-                    matched_cluster       = cluster
+                    matched_cluster = cluster
                     matched_cluster_index = ci
                     break
             if matched_cluster:
@@ -423,33 +417,33 @@ class LogTracer:
         # fall back to returning just the anchor entry
         if not matched_cluster:
             return {
-                "identifier":       identifier,
-                "found":            True,
-                "anchor_entry":     anchor_raw,
-                "cluster":          [],
-                "cluster_index":    None,
+                "identifier": identifier,
+                "found": True,
+                "anchor_entry": anchor_raw,
+                "cluster": [],
+                "cluster_index": None,
                 "total_in_cluster": 1,
-                "note":             "Entry found but not part of an error cluster.",
+                "note": "Entry found but not part of an error cluster.",
             }
 
         # Step 4 — format cluster entries, recent first
         cluster_formatted = [
             {
-                "timestamp":     e["timestamp"].strftime("%Y-%m-%d %H:%M:%S") if e["timestamp"] else None,
-                "error_type":    e["error_type"],
+                "timestamp": e["timestamp"].strftime("%Y-%m-%d %H:%M:%S") if e["timestamp"] else None,
+                "error_type": e["error_type"],
                 "primary_error": e["primary_error"],
-                "traceback":     e.get("traceback", ""),
-                "full_entry":    e.get("full_entry", ""),
+                "traceback": e.get("traceback", ""),
+                "full_entry": e.get("full_entry", ""),
             }
             for e in reversed(matched_cluster)
         ]
 
         return {
-            "identifier":       identifier,
-            "found":            True,
-            "anchor_entry":     anchor_raw,
-            "cluster":          cluster_formatted,
-            "cluster_index":    matched_cluster_index,
+            "identifier": identifier,
+            "found": True,
+            "anchor_entry": anchor_raw,
+            "cluster": cluster_formatted,
+            "cluster_index": matched_cluster_index,
             "total_in_cluster": len(matched_cluster),
         }
 
@@ -477,14 +471,15 @@ class LogTracer:
         if not search_result.get("entries"):
             return {
                 "identifier": identifier,
-                "found":      False,
-                "entries":    [],
+                "found": False,
+                "entries": [],
             }
 
         # Parse each matched entry for full details
         from preprocessing.error_extractor import ErrorExtractor
+
         extractor = ErrorExtractor()
-        entries   = []
+        entries = []
         for raw_entry in search_result["entries"]:
             parsed = extractor._parse_error_entry(raw_entry)
             parsed["raw"] = raw_entry
@@ -494,8 +489,8 @@ class LogTracer:
 
         return {
             "identifier": identifier,
-            "found":      True,
-            "entries":    entries,
+            "found": True,
+            "entries": entries,
         }
 
     def ask(self, question: str) -> str:
@@ -514,7 +509,8 @@ class LogTracer:
             tracer.ask("how many DB errors happened today?")
             tracer.ask("show me all errors between 9am and 11am")
         """
-        from pylogtracer.agents.qa_agent import QAAgent        
+        from pylogtracer.agents.qa_agent import QAAgent
+
         agent = QAAgent(tracer=self, factory=self._factory)
         return agent.run(question)
 
@@ -524,17 +520,17 @@ class LogTracer:
 
     def _read(
         self,
-        date:         Optional[str] = None,
-        from_dt:      Optional[str] = None,
-        to_dt:        Optional[str] = None,
+        date: Optional[str] = None,
+        from_dt: Optional[str] = None,
+        to_dt: Optional[str] = None,
         relative_day: Optional[str] = None,
     ) -> Dict:
         """Internal: run SmartReader and return raw read result."""
         reader = get_file_content(
-            relative_day = relative_day,
-            date         = date,
-            from_dt      = from_dt,
-            to_dt        = to_dt,
+            relative_day=relative_day,
+            date=date,
+            from_dt=from_dt,
+            to_dt=to_dt,
         )
         result = reader.fetch_logs_by_date(self.file_path)
         if "error" in result:
@@ -545,9 +541,9 @@ class LogTracer:
 
     def _get_reader(
         self,
-        date:    Optional[str] = None,
+        date: Optional[str] = None,
         from_dt: Optional[str] = None,
-        to_dt:   Optional[str] = None,
+        to_dt: Optional[str] = None,
     ):
         """Internal: return cached reader or create new one."""
         if self._reader is None:
@@ -556,9 +552,9 @@ class LogTracer:
 
     def _get_extraction(
         self,
-        date:    Optional[str] = None,
+        date: Optional[str] = None,
         from_dt: Optional[str] = None,
-        to_dt:   Optional[str] = None,
+        to_dt: Optional[str] = None,
     ) -> Dict:
         """
         Internal: run full extraction pipeline.
@@ -576,11 +572,11 @@ class LogTracer:
 
         # Extract + classify — reuse persisted classifier so keyword
         # store survives across multiple ask() calls this session
-        extractor  = ErrorExtractor(
-            gap_seconds = self.gap_seconds,
-            classifier  = self._classifier,
+        extractor = ErrorExtractor(
+            gap_seconds=self.gap_seconds,
+            classifier=self._classifier,
         )
-        self._extraction  = extractor.extract(log_entries)
+        self._extraction = extractor.extract(log_entries)
         self._last_filter = current_filter
 
         return self._extraction
