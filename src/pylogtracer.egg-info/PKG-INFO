@@ -1,17 +1,51 @@
 Metadata-Version: 2.4
 Name: pylogtracer
-Version: 0.0.2
-Summary: Provider-agnostic Python log analyzer with LLM classification, ReAct agent Q&A, and smart incident clustering
+Version: 0.1.0
+Summary: Provider-agnostic log analysis package with LLM support and LangGraph ReAct agent
 Home-page: https://github.com/Karthik.K/pylogtracer
 Author: Karthik.K
-Author-email: karthikkashi98@gmail.com
-Project-URL: Bug Tracker, https://github.com/Karthik.K/pylogtracer/issues
+Author-email: pylogtracer <karthikkashi98@gmail.com>
+License-Expression: MIT
+Project-URL: Homepage, https://github.com/KarthikKashi98/pylogtracer
+Project-URL: Repository, https://github.com/KarthikKashi98/pylogtracer
+Project-URL: Issues, https://github.com/KarthikKashi98/pylogtracer/issues
+Project-URL: Documentation, https://github.com/KarthikKashi98/pylogtracer#readme
+Keywords: log analysis,llm,langchain,langgraph,log tracer,root cause analysis,devops,observability,ollama,openai,anthropic
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: Intended Audience :: System Administrators
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: System :: Logging
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: langchain>=0.2.0
+Requires-Dist: langchain-core>=0.2.0
+Requires-Dist: langchain-openai>=0.1.0
+Requires-Dist: langchain-anthropic>=0.1.0
+Requires-Dist: langchain-ollama>=0.1.0
+Requires-Dist: langgraph>=0.1.0
+Requires-Dist: pydantic>=2.0.0
+Requires-Dist: python-dotenv>=1.0.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0; extra == "dev"
+Requires-Dist: pytest-cov>=4.0; extra == "dev"
+Requires-Dist: flake8>=6.0; extra == "dev"
+Requires-Dist: mypy>=1.0; extra == "dev"
+Requires-Dist: twine>=5.0; extra == "dev"
+Requires-Dist: build>=1.0; extra == "dev"
+Requires-Dist: tox>=4.0; extra == "dev"
+Requires-Dist: tox-gh-actions>=3.0; extra == "dev"
 Dynamic: author
-Dynamic: author-email
-Dynamic: description
 Dynamic: home-page
-Dynamic: project-url
-Dynamic: summary
+Dynamic: license-file
 
 # pylogtracer
 

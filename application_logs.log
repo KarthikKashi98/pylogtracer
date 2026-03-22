@@ -1,0 +1,285 @@
+2026-01-15 00:00:01 INFO  ========== Application Started ==========
+2026-01-15 00:00:02 INFO  Loading configuration from /etc/app/config.yaml
+2026-01-15 00:00:03 INFO  Database connection established at db-primary:5432
+2026-01-15 00:00:04 INFO  Redis cache connected at redis:6379
+2026-01-15 00:00:05 INFO  Worker pool initialized with 8 workers
+2026-01-15 00:00:06 INFO  API server listening on port 8080
+2026-01-15 00:00:07 INFO  Email service connected at smtp:587
+2026-01-15 00:00:08 INFO  All services healthy — startup complete
+
+2026-01-15 00:30:00 INFO  Scheduled job started: sync_inventory
+2026-01-15 00:30:01 INFO  Fetching inventory from warehouse API...
+2026-01-15 00:30:02 INFO  Successfully synced 1,243 inventory items
+2026-01-15 00:30:03 INFO  sync_inventory completed successfully
+
+2026-01-15 01:00:00 INFO  Scheduled job started: send_daily_reports
+2026-01-15 01:00:01 INFO  Generating report for 142 users...
+2026-01-15 01:00:02 ERROR Failed to send email to user_id=2045 — SMTP timeout INC2000001
+2026-01-15 01:00:03 WARNING Retrying email delivery for user_id=2045 attempt 1/3
+2026-01-15 01:00:05 ERROR Failed to send email to user_id=2045 — SMTP timeout INC2000002
+2026-01-15 01:00:06 WARNING Retrying email delivery for user_id=2045 attempt 2/3
+2026-01-15 01:00:08 ERROR Failed to send email to user_id=2045 — SMTP timeout INC2000003
+2026-01-15 01:00:09 ERROR Max retries exceeded — email delivery failed for user_id=2045 INC2000003
+2026-01-15 01:00:10 INFO  Report sent to remaining 141 users successfully
+
+2026-01-15 02:00:00 INFO  Scheduled job started: cleanup_temp_files
+2026-01-15 02:00:01 INFO  Scanning /tmp/app for files older than 24 hours...
+2026-01-15 02:00:02 INFO  Deleted 87 temporary files
+2026-01-15 02:00:03 INFO  cleanup_temp_files completed successfully
+
+2026-01-15 06:00:00 INFO  User login: user_id=1001 ip=192.168.1.10
+2026-01-15 06:00:01 INFO  User login: user_id=1002 ip=192.168.1.11
+2026-01-15 06:15:00 INFO  API request: GET /api/products user_id=1001
+2026-01-15 06:15:01 INFO  Returned 256 products to user_id=1001
+2026-01-15 06:20:00 INFO  API request: POST /api/orders user_id=1001
+2026-01-15 06:20:01 INFO  Order created successfully order_id=9001 user_id=1001
+
+2026-01-15 07:00:00 INFO  User login: user_id=1003 ip=10.0.0.5
+2026-01-15 07:05:00 ERROR Failed login attempt for user admin — invalid password INC2000004
+2026-01-15 07:05:01 ERROR Failed login attempt for user admin — invalid password INC2000005
+2026-01-15 07:05:02 ERROR Failed login attempt for user admin — invalid password INC2000006
+2026-01-15 07:05:03 ERROR Failed login attempt for user admin — invalid password INC2000007
+2026-01-15 07:05:04 ERROR Failed login attempt for user admin — invalid password INC2000008
+2026-01-15 07:05:05 CRITICAL Account locked after 5 failed attempts — user=admin ip=10.0.0.5 INC2000008
+2026-01-15 07:05:06 WARNING Security alert triggered — possible brute force attack from ip=10.0.0.5
+2026-01-15 07:05:07 INFO  Alert email sent to security@company.com
+
+2026-01-15 08:00:00 INFO  Memory usage: 45% (healthy)
+2026-01-15 08:00:00 INFO  CPU usage: 32% (healthy)
+2026-01-15 08:00:00 INFO  Disk usage: 61% (healthy)
+
+2026-01-15 09:00:00 INFO  API request: GET /api/orders user_id=1002
+2026-01-15 09:00:01 INFO  API request: GET /api/orders user_id=1003
+2026-01-15 09:00:02 INFO  API request: POST /api/orders user_id=1002
+2026-01-15 09:00:03 ERROR Database query timeout — SELECT * FROM orders WHERE user_id=1002 INC2000009
+Traceback (most recent call last):
+  File "/app/api/orders.py", line 56, in get_orders
+    results = db.execute(query, timeout=5)
+  File "/app/db/client.py", line 23, in execute
+    raise TimeoutError("Database query exceeded 5s timeout")
+TimeoutError: Database query exceeded 5s timeout
+2026-01-15 09:00:04 WARNING Retrying database query for user_id=1002 attempt 1/3
+2026-01-15 09:00:06 ERROR Database query timeout — SELECT * FROM orders WHERE user_id=1002 INC2000010
+2026-01-15 09:00:07 WARNING Retrying database query for user_id=1002 attempt 2/3
+2026-01-15 09:00:09 ERROR Database query timeout — SELECT * FROM orders WHERE user_id=1002 INC2000011
+2026-01-15 09:00:10 ERROR Max retries exceeded — query failed for user_id=1002 INC2000011
+2026-01-15 09:00:11 INFO  Returning cached response for user_id=1002
+
+2026-01-15 09:30:00 INFO  Scheduled job started: process_payments
+2026-01-15 09:30:01 INFO  Processing 47 pending payments...
+2026-01-15 09:30:02 ERROR Payment gateway connection refused — endpoint https://pay.gateway.com/v1 INC2000012
+Traceback (most recent call last):
+  File "/app/payments/processor.py", line 34, in process
+    response = requests.post(GATEWAY_URL, json=payload, timeout=10)
+  File "/app/payments/processor.py", line 34, in process
+    raise ConnectionError("Payment gateway refused connection")
+ConnectionError: Payment gateway refused connection
+2026-01-15 09:30:03 WARNING Retrying payment gateway connection attempt 1/3
+2026-01-15 09:30:05 ERROR Payment gateway connection refused — endpoint https://pay.gateway.com/v1 INC2000013
+2026-01-15 09:30:06 WARNING Retrying payment gateway connection attempt 2/3
+2026-01-15 09:30:08 ERROR Payment gateway connection refused — endpoint https://pay.gateway.com/v1 INC2000014
+2026-01-15 09:30:09 CRITICAL Payment processing halted — gateway unreachable after 3 attempts INC2000014
+2026-01-15 09:30:10 INFO  47 payments queued for retry when gateway recovers
+2026-01-15 09:30:11 INFO  Alert sent to payments-team@company.com
+
+2026-01-15 10:00:00 INFO  Memory usage: 67% (healthy)
+2026-01-15 10:00:00 INFO  CPU usage: 78% (warning threshold)
+2026-01-15 10:00:01 WARNING CPU usage above 75% — monitoring closely
+
+2026-01-15 10:15:00 INFO  Payment gateway connection restored
+2026-01-15 10:15:01 INFO  Processing 47 queued payments...
+2026-01-15 10:15:02 INFO  47 payments processed successfully
+
+2026-01-15 10:30:00 INFO  Worker process started: worker_id=W005
+2026-01-15 10:30:01 INFO  Worker process started: worker_id=W006
+2026-01-15 10:30:05 ERROR Unhandled exception in worker process worker_id=W005 INC2000015
+Traceback (most recent call last):
+  File "/app/worker/processor.py", line 102, in process_order
+    discount = order["total_price"] / order["quantity"]
+  File "/app/worker/processor.py", line 102, in process_order
+    raise ZeroDivisionError("Order quantity cannot be zero")
+ZeroDivisionError: Order quantity cannot be zero
+2026-01-15 10:30:06 ERROR Worker crashed due to fatal error — restarting worker_id=W005 INC2000015
+2026-01-15 10:30:07 INFO  Worker restarted successfully worker_id=W005
+2026-01-15 10:30:08 ERROR Unhandled exception in worker process worker_id=W006 INC2000016
+Traceback (most recent call last):
+  File "/app/worker/processor.py", line 88, in calculate_tax
+    tax = order["price"] * tax_rate
+KeyError: 'price'
+2026-01-15 10:30:09 ERROR Worker crashed due to fatal error — restarting worker_id=W006 INC2000016
+2026-01-15 10:30:10 INFO  Worker restarted successfully worker_id=W006
+
+2026-01-15 11:00:00 INFO  API request: DELETE /api/orders/9001 user_id=1001
+2026-01-15 11:00:01 INFO  Order 9001 cancelled successfully
+2026-01-15 11:00:02 INFO  Refund initiated for order_id=9001 amount=$45.99
+
+2026-01-15 12:00:00 INFO  Memory usage: 72% (healthy)
+2026-01-15 12:00:00 INFO  CPU usage: 55% (healthy)
+2026-01-15 12:00:00 INFO  Disk usage: 63% (healthy)
+2026-01-15 12:00:01 INFO  All services healthy
+
+2026-01-15 13:00:00 INFO  Scheduled job started: sync_inventory
+2026-01-15 13:00:01 ERROR Failed to connect to warehouse API — connection timeout INC2000017
+Traceback (most recent call last):
+  File "/app/jobs/sync_inventory.py", line 45, in fetch
+    response = requests.get(WAREHOUSE_URL, timeout=10)
+  File "/app/jobs/sync_inventory.py", line 45, in fetch
+    raise TimeoutError("Warehouse API connection timed out after 10s")
+TimeoutError: Warehouse API connection timed out after 10s
+2026-01-15 13:00:02 WARNING Retrying warehouse API connection attempt 1/3
+2026-01-15 13:00:04 ERROR Failed to connect to warehouse API — connection timeout INC2000018
+2026-01-15 13:00:05 WARNING Retrying warehouse API connection attempt 2/3
+2026-01-15 13:00:07 ERROR Failed to connect to warehouse API — connection timeout INC2000019
+2026-01-15 13:00:08 CRITICAL sync_inventory job failed — warehouse API unreachable INC2000019
+2026-01-15 13:00:09 INFO  sync_inventory marked as FAILED — will retry in 1 hour
+
+2026-01-15 14:00:00 INFO  Scheduled job started: sync_inventory
+2026-01-15 14:00:01 INFO  Warehouse API connection restored
+2026-01-15 14:00:02 INFO  Successfully synced 1,189 inventory items
+2026-01-15 14:00:03 INFO  sync_inventory completed successfully
+
+2026-01-15 15:00:00 INFO  Memory usage: 81% (warning threshold)
+2026-01-15 15:00:01 WARNING Memory usage above 80% — consider restarting workers
+2026-01-15 15:00:02 INFO  Triggering garbage collection...
+2026-01-15 15:00:03 INFO  Memory usage after GC: 68% (healthy)
+
+2026-01-15 16:00:00 INFO  User login: user_id=1004 ip=192.168.1.50
+2026-01-15 16:00:01 INFO  API request: GET /api/products user_id=1004
+2026-01-15 16:00:02 INFO  API request: POST /api/orders user_id=1004
+2026-01-15 16:00:03 ERROR Database query timeout — INSERT INTO orders VALUES(...) INC2000020
+Traceback (most recent call last):
+  File "/app/api/orders.py", line 89, in create_order
+    db.execute(insert_query, timeout=5)
+  File "/app/db/client.py", line 23, in execute
+    raise TimeoutError("Database query exceeded 5s timeout")
+TimeoutError: Database query exceeded 5s timeout
+2026-01-15 16:00:04 ERROR Order creation failed for user_id=1004 INC2000020
+2026-01-15 16:00:05 INFO  Returning error response to user_id=1004
+
+2026-01-15 17:00:00 INFO  Scheduled job started: generate_analytics
+2026-01-15 17:00:01 INFO  Processing analytics for 1,432 events...
+2026-01-15 17:00:02 ERROR Failed to write analytics to database — disk quota exceeded INC2000021
+Traceback (most recent call last):
+  File "/app/analytics/writer.py", line 67, in write
+    db.bulk_insert(analytics_data)
+  File "/app/analytics/writer.py", line 67, in write
+    raise IOError("Disk quota exceeded on /var/lib/postgresql")
+IOError: Disk quota exceeded on /var/lib/postgresql
+2026-01-15 17:00:03 CRITICAL Analytics pipeline failed — disk quota exceeded INC2000021
+2026-01-15 17:00:04 WARNING Disk usage: 96% — CRITICAL
+2026-01-15 17:00:05 INFO  Alert sent to devops@company.com
+
+2026-01-15 17:30:00 INFO  DevOps cleared disk space — freed 50GB
+2026-01-15 17:30:01 INFO  Disk usage: 61% (healthy)
+2026-01-15 17:30:02 INFO  Retrying analytics pipeline...
+2026-01-15 17:30:03 INFO  Analytics written successfully for 1,432 events
+
+2026-01-15 18:00:00 INFO  Memory usage: 65% (healthy)
+2026-01-15 18:00:00 INFO  CPU usage: 41% (healthy)
+2026-01-15 18:00:00 INFO  Disk usage: 62% (healthy)
+2026-01-15 18:00:01 INFO  All services healthy
+
+2026-01-15 20:00:00 INFO  Scheduled job started: backup_database
+2026-01-15 20:00:01 INFO  Starting incremental backup to s3://company-backups/2026-01-15
+2026-01-15 20:00:02 ERROR S3 upload failed — access denied to bucket company-backups INC2000022
+Traceback (most recent call last):
+  File "/app/backup/s3_uploader.py", line 45, in upload
+    s3.upload_file(local_path, bucket, key)
+  File "/app/backup/s3_uploader.py", line 45, in upload
+    raise PermissionError("Access denied: s3://company-backups — check IAM role")
+PermissionError: Access denied: s3://company-backups — check IAM role
+2026-01-15 20:00:03 CRITICAL Database backup failed — S3 permission denied INC2000022
+2026-01-15 20:00:04 INFO  Alert sent to devops@company.com
+
+2026-01-15 22:00:00 INFO  Scheduled job started: cleanup_old_sessions
+2026-01-15 22:00:01 INFO  Removing sessions older than 24 hours...
+2026-01-15 22:00:02 INFO  Deleted 3,421 expired sessions
+2026-01-15 22:00:03 INFO  cleanup_old_sessions completed successfully
+
+2026-01-15 23:00:00 INFO  End of day summary:
+2026-01-15 23:00:01 INFO  Total API requests: 8,432
+2026-01-15 23:00:02 INFO  Total errors: 22
+2026-01-15 23:00:03 INFO  Total orders processed: 156
+2026-01-15 23:00:04 INFO  Total payments processed: 47
+2026-01-15 23:59:59 INFO  ========== Application Running ==========
+
+2026-01-16 00:00:00 INFO  ========== New Day Started ==========
+2026-01-16 00:30:00 INFO  Scheduled job started: sync_inventory
+2026-01-16 00:30:01 INFO  Successfully synced 1,301 inventory items
+2026-01-16 00:30:02 INFO  sync_inventory completed successfully
+
+2026-01-16 03:00:00 INFO  Scheduled job started: cleanup_temp_files
+2026-01-16 03:00:01 INFO  Deleted 124 temporary files
+2026-01-16 03:00:02 INFO  cleanup_temp_files completed successfully
+
+2026-01-16 06:00:00 INFO  User login: user_id=1001 ip=192.168.1.10
+2026-01-16 06:00:01 INFO  User login: user_id=1005 ip=192.168.2.20
+2026-01-16 06:05:00 ERROR Failed login attempt for user superadmin — invalid password INC2000023
+2026-01-16 06:05:01 ERROR Failed login attempt for user superadmin — invalid password INC2000024
+2026-01-16 06:05:02 ERROR Failed login attempt for user superadmin — invalid password INC2000025
+2026-01-16 06:05:03 CRITICAL Account locked after 3 failed attempts — user=superadmin ip=192.168.2.20 INC2000025
+2026-01-16 06:05:04 WARNING Suspicious activity detected — possible credential stuffing attack
+
+2026-01-16 08:00:00 INFO  Memory usage: 48% (healthy)
+2026-01-16 08:00:00 INFO  CPU usage: 29% (healthy)
+2026-01-16 08:00:00 INFO  Disk usage: 62% (healthy)
+
+2026-01-16 09:00:00 INFO  API request: GET /api/orders user_id=1001
+2026-01-16 09:00:01 INFO  Returned 38 orders to user_id=1001
+2026-01-16 09:00:02 INFO  API request: POST /api/orders user_id=1005
+2026-01-16 09:00:03 INFO  Order created successfully order_id=9002 user_id=1005
+
+2026-01-16 10:00:00 INFO  Scheduled job started: process_payments
+2026-01-16 10:00:01 INFO  Processing 23 pending payments...
+2026-01-16 10:00:02 INFO  23 payments processed successfully
+
+2026-01-16 11:00:00 INFO  Worker process started: worker_id=W007
+2026-01-16 11:00:05 ERROR Unhandled exception in worker process worker_id=W007 INC2000026
+Traceback (most recent call last):
+  File "/app/worker/processor.py", line 102, in process_order
+    discount = order["total_price"] / order["quantity"]
+  File "/app/worker/processor.py", line 102, in process_order
+    raise ZeroDivisionError("Order quantity cannot be zero")
+ZeroDivisionError: Order quantity cannot be zero
+2026-01-16 11:00:06 ERROR Worker crashed due to fatal error — restarting worker_id=W007 INC2000026
+2026-01-16 11:00:07 INFO  Worker restarted successfully worker_id=W007
+
+2026-01-16 13:00:00 INFO  Memory usage: 55% (healthy)
+2026-01-16 13:00:00 INFO  CPU usage: 44% (healthy)
+2026-01-16 13:00:01 INFO  All services healthy
+
+2026-01-16 14:00:00 INFO  Scheduled job started: generate_analytics
+2026-01-16 14:00:01 INFO  Processing analytics for 2,156 events...
+2026-01-16 14:00:02 INFO  Analytics written successfully
+
+2026-01-16 15:00:00 INFO  API request: GET /api/products user_id=1001
+2026-01-16 15:00:01 INFO  API request: POST /api/orders user_id=1001
+2026-01-16 15:00:02 INFO  Order created successfully order_id=9003 user_id=1001
+
+2026-01-16 16:00:00 INFO  Scheduled job started: sync_inventory
+2026-01-16 16:00:01 ERROR Failed to connect to warehouse API — connection timeout INC2000027
+2026-01-16 16:00:02 WARNING Retrying warehouse API connection attempt 1/3
+2026-01-16 16:00:04 ERROR Failed to connect to warehouse API — connection timeout INC2000028
+2026-01-16 16:00:05 WARNING Retrying warehouse API connection attempt 2/3
+2026-01-16 16:00:07 ERROR Failed to connect to warehouse API — connection timeout INC2000029
+2026-01-16 16:00:08 CRITICAL sync_inventory job failed — warehouse API unreachable INC2000029
+2026-01-16 16:00:09 INFO  sync_inventory marked as FAILED
+
+2026-01-16 17:00:00 INFO  Scheduled job started: sync_inventory
+2026-01-16 17:00:01 INFO  Warehouse API connection restored
+2026-01-16 17:00:02 INFO  Successfully synced 1,201 inventory items
+
+2026-01-16 20:00:00 INFO  Scheduled job started: backup_database
+2026-01-16 20:00:01 ERROR S3 upload failed — access denied to bucket company-backups INC2000030
+Traceback (most recent call last):
+  File "/app/backup/s3_uploader.py", line 45, in upload
+    raise PermissionError("Access denied: s3://company-backups — check IAM role")
+PermissionError: Access denied: s3://company-backups — check IAM role
+2026-01-16 20:00:02 CRITICAL Database backup failed — S3 permission denied INC2000030
+2026-01-16 20:00:03 INFO  Alert sent to devops@company.com
+
+2026-01-16 23:00:00 INFO  End of day summary:
+2026-01-16 23:00:01 INFO  Total API requests: 6,891
+2026-01-16 23:00:02 INFO  Total errors: 8
+2026-01-16 23:00:03 INFO  Total orders processed: 98
+2026-01-16 23:59:59 INFO  ========== Application Running ==========
