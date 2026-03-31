@@ -1,0 +1,8 @@
+
+2026-04-01 08:15:30 ERROR: INC1000004 - MySQL connection failed: [Errno 111] Connection refused
+2026-04-01 08:16:45 INFO: INC1000004 - Retrying MySQL connection...
+2026-04-01 08:17:12 ERROR: INC1000004 - MySQL query timeout: SELECT * FROM users timed out after 30s
+2026-04-01 08:18:00 CRITICAL: INC1000004 - Failed to establish connection after 3 retries
+2026-04-01 08:18:30 INFO: INC1000004 - Root cause identified: Database server was down for maintenance
+2026-04-01 08:20:00 INFO: INC1000004 - Incident resolved - MySQL service restored
+2026-04-01 08:20:30 INFO: Application started

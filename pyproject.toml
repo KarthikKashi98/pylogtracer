@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name            = "pylogtracer"
-version         = "0.1.1"
+version         = "0.0.2"
 description     = "Provider-agnostic log analysis package with LLM support and LangGraph ReAct agent"
 readme          = "README.md"
 license         = "MIT"

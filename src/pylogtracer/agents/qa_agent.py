@@ -91,7 +91,7 @@ REACT LOOP — how to respond:
   REASON: one line why
 
   When you have enough info to answer:
-  FINAL_ANSWER: <write your answer here — be specific with error types, timestamps, counts>
+    FINAL_ANSWER: <specific answer with error types, timestamps, and counts>
 
 IMPORTANT RULES:
   - Call tools ONE at a time
@@ -248,9 +248,10 @@ class QAAgent:
             content = msg.content if hasattr(msg, "content") else ""
             if "FINAL_ANSWER:" in content:
                 answer = self._extract_final_answer(content)
-                return {**state, "final_answer": answer}
+                if answer is not None:  # Skip placeholder answers
+                    return {**state, "final_answer": answer}
 
-        # Fallback to last AI message
+        # Fallback to last AI message if no valid FINAL_ANSWER found
         for msg in reversed(state["messages"]):
             if isinstance(msg, AIMessage):
                 answer_str: str = msg.content if isinstance(msg.content, str) else str(msg.content)
@@ -374,6 +375,17 @@ class QAAgent:
             idx = answer.find(cutoff)
             if idx != -1:
                 answer = answer[:idx].strip()
+
+        # Check if answer is just the placeholder template (various forms)
+        placeholder_patterns = [
+            "<write your answer here",
+            "<specific answer",
+            "Provide only the final answer",
+            "Provide your answer"
+        ]
+        for pattern in placeholder_patterns:
+            if pattern.lower() in answer.lower() and answer.count('<') > 0 and answer.count('>') > 0:
+                return None  # Signal that this is not a real answer
 
         return answer
 
