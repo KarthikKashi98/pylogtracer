@@ -38,26 +38,25 @@ Usage:
 """
 
 import os
-from typing import Optional, Dict, Any, Type, TYPE_CHECKING
+from typing import Optional, Dict, Any, TYPE_CHECKING
 from dotenv import load_dotenv
 
 # LangChain base types — imported for type checking only
 # At runtime we use Any to avoid hard dependency crashes
 if TYPE_CHECKING:
-    from langchain_core.language_models import BaseChatModel
-    from pydantic import BaseModel
+    pass
 
 try:
     from langchain_core.language_models import BaseChatModel as _BaseChatModel
-    from langchain_core.output_parsers  import JsonOutputParser
-    from langchain_core.prompts         import ChatPromptTemplate
+    from langchain_core.output_parsers import JsonOutputParser
+    from langchain_core.prompts import ChatPromptTemplate
     from pydantic import BaseModel as _BaseModel
     LANGCHAIN_AVAILABLE = True
 except ImportError:
-    _BaseChatModel     = None  # type: ignore[assignment,misc]
-    JsonOutputParser   = None  # type: ignore[assignment,misc]
+    _BaseChatModel = None  # type: ignore[assignment,misc]
+    JsonOutputParser = None  # type: ignore[assignment,misc]
     ChatPromptTemplate = None  # type: ignore[assignment,misc]
-    _BaseModel         = None  # type: ignore[assignment,misc]
+    _BaseModel = None  # type: ignore[assignment,misc]
     LANGCHAIN_AVAILABLE = False
 # Load .env only if it exists — config dict takes priority
 if os.path.exists('.env'):
@@ -65,20 +64,20 @@ if os.path.exists('.env'):
 
 
 # ── Provider constants ────────────────────────────────────────────
-PROVIDER_OPENAI    = "openai"
+PROVIDER_OPENAI = "openai"
 PROVIDER_ANTHROPIC = "anthropic"
-PROVIDER_OLLAMA    = "ollama"
-PROVIDER_CUSTOM    = "custom"
+PROVIDER_OLLAMA = "ollama"
+PROVIDER_CUSTOM = "custom"
 
 SUPPORTED_PROVIDERS = {PROVIDER_OPENAI, PROVIDER_ANTHROPIC,
                        PROVIDER_OLLAMA, PROVIDER_CUSTOM}
 
 # Default models per provider
 DEFAULT_MODELS = {
-    PROVIDER_OPENAI:    "gpt-4o-mini",
+    PROVIDER_OPENAI: "gpt-4o-mini",
     PROVIDER_ANTHROPIC: "claude-3-5-haiku-20241022",
-    PROVIDER_OLLAMA:    "qwen2.5:7b",
-    PROVIDER_CUSTOM:    "default",
+    PROVIDER_OLLAMA: "qwen2.5:7b",
+    PROVIDER_CUSTOM: "default",
 }
 
 
@@ -135,12 +134,12 @@ class LLMFactory:
     # ─────────────────────────────────────────────────────────────
 
     def _build_llm(self) -> Any:
-        provider    = self.get_provider()
-        model       = self.get_model()
-        api_key     = self._resolve("api_key",     "LLM_API_KEY",     None)
-        base_url    = self._resolve("base_url",    "LLM_BASE_URL",    None)
+        provider = self.get_provider()
+        model = self.get_model()
+        api_key = self._resolve("api_key", "LLM_API_KEY", None)
+        base_url = self._resolve("base_url", "LLM_BASE_URL", None)
         temperature = float(self._resolve("temperature", "LLM_TEMPERATURE", 0.0))
-        max_tokens  = int(self._resolve("max_tokens",  "LLM_MAX_TOKENS",  1024))
+        max_tokens = int(self._resolve("max_tokens", "LLM_MAX_TOKENS", 1024))
 
         if provider not in SUPPORTED_PROVIDERS:
             raise ValueError(
@@ -151,7 +150,8 @@ class LLMFactory:
         print(f"  [LLMFactory] provider={provider} | model={model}")
 
         if provider == PROVIDER_OPENAI:
-            return self._build_openai(model, api_key, base_url, temperature, max_tokens)
+            return self._build_openai(model, api_key, base_url, temperature,
+                                      max_tokens)
 
         elif provider == PROVIDER_ANTHROPIC:
             return self._build_anthropic(model, api_key, temperature, max_tokens)
@@ -160,36 +160,41 @@ class LLMFactory:
             return self._build_ollama(model, base_url, temperature)
 
         elif provider == PROVIDER_CUSTOM:
-            return self._build_custom(model, api_key, base_url, temperature, max_tokens)
+            return self._build_custom(model, api_key, base_url, temperature,
+                                      max_tokens)
 
     def _build_openai(self, model, api_key, base_url, temperature, max_tokens):
         from langchain_openai import ChatOpenAI
         kwargs = dict(
-            model       = model,
-            temperature = temperature,
-            max_tokens  = max_tokens,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
         )
-        if api_key:  kwargs["api_key"]  = api_key
-        if base_url: kwargs["base_url"] = base_url
+        if api_key:
+            kwargs["api_key"] = api_key
+        if base_url:
+            kwargs["base_url"] = base_url
         return ChatOpenAI(**kwargs)
 
     def _build_anthropic(self, model, api_key, temperature, max_tokens):
         from langchain_anthropic import ChatAnthropic
         kwargs = dict(
-            model      = model,
-            temperature = temperature,
-            max_tokens  = max_tokens,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
         )
-        if api_key: kwargs["anthropic_api_key"] = api_key
+        if api_key:
+            kwargs["anthropic_api_key"] = api_key
         return ChatAnthropic(**kwargs)
 
     def _build_ollama(self, model, base_url, temperature):
         from langchain_ollama import ChatOllama
         kwargs = dict(
-            model       = model,
-            temperature = temperature,
+            model=model,
+            temperature=temperature,
         )
-        if base_url: kwargs["base_url"] = base_url
+        if base_url:
+            kwargs["base_url"] = base_url
         return ChatOllama(**kwargs)
 
     def _build_custom(self, model, api_key, base_url, temperature, max_tokens):
@@ -204,12 +209,13 @@ class LLMFactory:
                 "Set LLM_BASE_URL env var or pass base_url in config."
             )
         kwargs = dict(
-            model       = model,
-            base_url    = base_url,
-            temperature = temperature,
-            max_tokens  = max_tokens,
+            model=model,
+            base_url=base_url,
+            temperature=temperature,
+            max_tokens=max_tokens,
         )
-        if api_key: kwargs["api_key"] = api_key
+        if api_key:
+            kwargs["api_key"] = api_key
         return ChatOpenAI(**kwargs)
 
     # ─────────────────────────────────────────────────────────────

@@ -27,6 +27,8 @@ sample_log = """
 2026-04-01 13:45:22 ERROR: INC1000008 - Connection pool exhausted: No available MySQL connections
 2026-04-01 13:45:22 INFO:  incident no INC1000004 prediction is {"problem_context":"1234567890","problem_behavior":"abc"}
 2026-04-01 13:46:22 INFO: prediction completed for INC1000004 
+2026-04-01 13:45:22 INFO: incident no INC1000004 prediction is {"problem_context":"1234567890","problem_behavior":"abc"}
+
 """
 
 # Write sample log
@@ -39,7 +41,7 @@ tracer = LogTracer(
     file_path="application_logs.txt",
     llm_config={
         "provider": "ollama",
-        "model": "qwen2.5:3b",
+        "model": "qwen3:latest",
         "base_url": "http://localhost:11434"
     }
 )
@@ -49,7 +51,7 @@ print("TESTING: tracer.ask() - Prediction result for INC1000004")
 print("="*70)
 
 try:
-    answer = tracer.ask("what is the prediction result of INC1000004?")
+    answer = tracer.ask("what is the prediction result of INC1000004? and list out all the  logs related to this incident")
     print("\n[RESULT]")
     print("------------>", answer)
     

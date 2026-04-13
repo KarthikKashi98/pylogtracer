@@ -32,12 +32,7 @@ Usage:
 """
 
 import logging
-from re import S
 from typing import Optional, Dict, List, Any
-
-# Setup logging for tool calls
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
 from pylogtracer.preprocessing.smart_reader import get_file_content
 from pylogtracer.preprocessing.error_extractor import ErrorExtractor
@@ -45,6 +40,10 @@ from pylogtracer.preprocessing.error_type_classifier import ErrorTypeClassifier
 from pylogtracer.agents.root_cause_analyzer import RootCauseAnalyzer
 from pylogtracer.multiagent.context_bridge import ContextBridge
 from pylogtracer.llm.llm_factory import LLMFactory
+
+# Setup logging for tool calls
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 
 class LogTracer:
@@ -481,13 +480,13 @@ class LogTracer:
                 f"Found {total_found} log entries for '{identifier}'. "
                 f"None belong to an error cluster (likely INFO/DEBUG/WARNING lines only)."
             )
-            print(f"  [get_related_logs] No error cluster match — returning raw entries only")
+            print("  [get_related_logs] No error cluster match — returning raw entries only")
 
         return {
             "identifier": identifier,
             "found": True,
             "total_found": total_found,
-            "all_entries": all_entries,          # ALL lines — INFO, ERROR, DEBUG etc.
+            "all_entries": all_entries,  # ALL lines — INFO, ERROR, DEBUG etc.
             "error_cluster": cluster_formatted,  # only the error-cluster subset (may be [])
             "cluster_index": matched_cluster_index,
             "total_in_cluster": len(cluster_formatted),

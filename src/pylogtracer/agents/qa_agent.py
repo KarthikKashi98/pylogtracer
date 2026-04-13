@@ -136,14 +136,17 @@ EXAMPLES
 Input: "what is the prediction result of INC1000004 and list all logs for this incident"
 Output:
 [
-  {"id": 0, "question": "Search for the prediction result of INC1000004 in the logs.", "depends_on": null},
-  {"id": 1, "question": "Search for ALL log entries (including INFO, DEBUG, WARNING, ERROR) that contain INC1000004.", "depends_on": null}
+  {"id": 0, "question": "Search for the prediction result of INC1000004 in
+            the logs.", "depends_on": null},
+  {"id": 1, "question": "Search for ALL log entries (including INFO, DEBUG,
+            WARNING, ERROR) that contain INC1000004.", "depends_on": null}
 ]
 
 Input: "show INC1033234 and how long did it last?"
 Output:
 [
-  {"id": 0, "question": "Search for ALL log entries (including INFO, DEBUG, WARNING, ERROR) that contain INC1033234.", "depends_on": null},
+  {"id": 0, "question": "Search for ALL log entries (including INFO, DEBUG,
+            WARNING, ERROR) that contain INC1033234.", "depends_on": null},
   {"id": 1, "question": "How long did the incident INC1033234 last?", "depends_on": null}
 ]
 
@@ -257,7 +260,7 @@ RULES
 ==================================================
 """
 
-REACT_SYSTEM_PROMPT ="""You are a powerful log analysis agent.
+REACT_SYSTEM_PROMPT = """You are a powerful log analysis agent.
 You have access to tools to analyze log files. Use them to answer the user's question completely.
 
 TOOLS AVAILABLE:
@@ -489,7 +492,7 @@ class QAAgent:
         print(f"  [QAAgent] Merging {len(prior)} sub-answers...")
 
         qa_block = "\n\n".join(
-            f"Sub-question {i+1}: {pa['question']}\nAnswer: {pa['answer']}"
+            f"Sub-question {i + 1}: {pa['question']}\nAnswer: {pa['answer']}"
             for i, pa in enumerate(prior)
         )
         merge_user = (
@@ -530,7 +533,7 @@ class QAAgent:
             content = response.content if hasattr(response, "content") else str(response)
             sq = state["sub_questions"][state["current_index"]]
             preview = content[:100].replace("\n", " ").strip()
-            print(f"  [QAAgent] Q{sq['id']} step {state['steps_taken']+1}: {preview}...")
+            print(f"  [QAAgent] Q{sq['id']} step {state['steps_taken'] + 1}: {preview}...")
             print(state["messages"] + [AIMessage(content=content)])
             return {
                 **state,
@@ -599,7 +602,7 @@ class QAAgent:
             return "finalize"
         content = self._last_ai_content(state["messages"])
         if "FINAL_ANSWER:" in content:
-            print("  [QAAgent] 22222222/ FINAL_ANSWER: found in content, routing to finalize and content is ",content)
+            print("  [QAAgent] 22222222/ FINAL_ANSWER: found in content, routing to finalize and content is ", content)
             return "finalize"
         elif "TOOL:" in content:
             print("  [QAAgent] 33333333/ TOOL: found in content, routing to tool")
@@ -833,13 +836,13 @@ class QAAgent:
 
         builder = StateGraph(AgentState)
 
-        builder.add_node("split_questions",     self._node_split_questions)
-        builder.add_node("time_resolve",        self._node_time_resolve)
-        builder.add_node("think",               self._node_think)
-        builder.add_node("tool",                self._node_tool)
-        builder.add_node("finalize",            self._node_finalize)
+        builder.add_node("split_questions", self._node_split_questions)
+        builder.add_node("time_resolve", self._node_time_resolve)
+        builder.add_node("think", self._node_think)
+        builder.add_node("tool", self._node_tool)
+        builder.add_node("finalize", self._node_finalize)
         builder.add_node("context_accumulator", self._node_context_accumulator)
-        builder.add_node("merge_answers",       self._node_merge_answers)
+        builder.add_node("merge_answers", self._node_merge_answers)
 
         builder.add_edge(START, "split_questions")
         builder.add_edge("split_questions", "time_resolve")
@@ -858,7 +861,7 @@ class QAAgent:
             self._route_after_accumulate,
             {
                 "next_question": "time_resolve",
-                "merge":         "merge_answers",
+                "merge": "merge_answers",
             },
         )
         builder.add_edge("merge_answers", END)

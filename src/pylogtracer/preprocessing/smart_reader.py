@@ -311,7 +311,7 @@ class get_file_content:
         import sys
         sys.stderr.write(f"[SEARCH TRACE] keyword={keyword}, max_results={max_results}\n")
         sys.stderr.flush()
-        
+
         if not self._all_lines:
             return {"error": "No file loaded yet. Call fetch_logs_by_date() first."}
 
@@ -319,9 +319,9 @@ class get_file_content:
 
         # Group all lines into entries first
         all_entries = self._group_into_entries(self._all_lines)
-        print("-----------------------",all_entries)
+        print("-----------------------", all_entries)
         print("entry count:", len(all_entries))
-        print("entry serach",keyword_lower)
+        print("entry serach", keyword_lower)
         # Filter entries containing the keyword
         matched = [entry for entry in all_entries if keyword_lower in entry.lower()]
 
@@ -332,7 +332,7 @@ class get_file_content:
 
         sys.stderr.write(f"[SEARCH TRACE] found {len(matched)} entries\n")
         sys.stderr.flush()
-        
+
         return {
             "keyword": keyword,
             "total_found": len(matched),
