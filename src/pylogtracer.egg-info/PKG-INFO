@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: pylogtracer
-Version: 0.1.0
+Version: 0.1.2
 Summary: Provider-agnostic log analysis package with LLM support and LangGraph ReAct agent
 Home-page: https://github.com/Karthik.K/pylogtracer
 Author: Karthik.K
@@ -20,6 +20,7 @@ Classifier: Programming Language :: Python :: 3.9
 Classifier: Programming Language :: Python :: 3.10
 Classifier: Programming Language :: Python :: 3.11
 Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
 Classifier: Topic :: System :: Logging
 Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
 Classifier: Topic :: Software Development :: Libraries :: Python Modules

@@ -31,7 +31,13 @@ Usage:
     tracer.ask("show me errors between 9am and 11am")
 """
 
+import logging
+from re import S
 from typing import Optional, Dict, List, Any
+
+# Setup logging for tool calls
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 from pylogtracer.preprocessing.smart_reader import get_file_content
 from pylogtracer.preprocessing.error_extractor import ErrorExtractor
@@ -249,6 +255,9 @@ class LogTracer:
             tracer.search("INC1033234")
             tracer.search("connection refused")
         """
+        msg = f"[SEARCH] Searching logs for keyword '{keyword}' with max_results={max_results}..."
+        print(msg)
+        logger.info(msg)
         reader = self._get_reader()
         return reader.search_logs(keyword, max_results=max_results)
 
@@ -358,93 +367,132 @@ class LogTracer:
 
     def get_related_logs(self, identifier: str) -> Dict:
         """
-        Find all logs in the same cluster as the entry containing the identifier.
-        Works for any string — incident IDs, keywords, error snippets etc.
+        Find all logs related to an identifier — both error cluster entries
+        and non-error entries (INFO, DEBUG, WARNING) that mention the same ID.
+
+        Strategy (in order):
+          1. search() to find ALL log lines that mention the identifier.
+             This is the superset — guaranteed to find everything.
+          2. Among those matches, scan error clusters for any entry whose
+             full_entry or primary_error contains the identifier.
+             If a cluster match is found → include the full cluster too
+             (gives error-scoped analysis alongside the raw lines).
+          3. Return both sets clearly labelled so the LLM has full picture.
+
+        Why this is better than the old approach:
+          OLD: took entries[0] (most recent raw string) as anchor, then tried
+               to match its first 80 chars against full_entry in clusters.
+               Failed silently when the most recent match was an INFO line
+               (never in any cluster) or when whitespace differed.
+          NEW: searches clusters by identifier string directly — same lookup
+               that found the raw entries, so it never misses.
 
         Args:
-            identifier: Any string present in a log entry
+            identifier: Any string present in log entries
                         e.g. "INC1033234", "connection refused", "REQ-456"
 
         Returns:
             {
-                "identifier":   str,
-                "found":        bool,
-                "anchor_entry": str,        the entry that matched
-                "cluster":      list[dict], all entries in same cluster
-                "cluster_index": int,       which cluster (0-based)
-                "total_in_cluster": int
+                "identifier":        str,
+                "found":             bool,
+                "total_found":       int,     all lines mentioning identifier
+                "all_entries":       list,    every matching raw log line
+                "error_cluster":     list,    entries from error cluster (may be empty)
+                "cluster_index":     int|None,
+                "total_in_cluster":  int,
+                "has_error_cluster": bool,    True if identifier is in an error cluster
+                "note":              str      human-readable explanation of what was found
             }
 
         Example:
             tracer.get_related_logs("INC1033234")
             tracer.get_related_logs("connection refused")
         """
-        # Step 1 — find the anchor entry
-        search_result = self.search(identifier, max_results=1)
-        if not search_result.get("entries"):
+        print(f"  [get_related_logs] Searching for '{identifier}'...")
+
+        # ── Step 1: search ALL log lines for the identifier ───────────────
+        # Increase max_results so we don't miss any entries for busy incidents
+        search_result = self.search(identifier, max_results=50)
+        all_entries = search_result.get("entries", [])
+        total_found = search_result.get("total_found", 0)
+
+        if not all_entries:
+            print(f"  [get_related_logs] No entries found for '{identifier}'")
             return {
                 "identifier": identifier,
                 "found": False,
-                "anchor_entry": None,
-                "cluster": [],
+                "total_found": 0,
+                "all_entries": [],
+                "error_cluster": [],
                 "cluster_index": None,
                 "total_in_cluster": 0,
+                "has_error_cluster": False,
+                "note": f"No log entries found containing '{identifier}'.",
             }
 
-        anchor_raw = search_result["entries"][0]  # most recent match
+        print(f"  [get_related_logs] Found {total_found} raw entries. Scanning error clusters...")
 
-        # Step 2 — get extraction (clusters already computed)
+        # ── Step 2: scan error clusters for the identifier ────────────────
+        # Match directly on identifier string — avoids the fragile 80-char
+        # fingerprint approach and works regardless of entry format.
         extraction = self._get_extraction()
         clusters = extraction.get("clusters", [])
 
-        # Step 3 — find which cluster contains the anchor entry
-        # Match by checking if anchor text appears in any cluster entry
-        anchor_lower = anchor_raw.lower()[:80]  # first 80 chars as fingerprint
-
+        identifier_lower = identifier.lower()
         matched_cluster = None
         matched_cluster_index = None
 
         for ci, cluster in enumerate(clusters):
             for error in cluster:
-                if anchor_lower in error.get("full_entry", "").lower():
+                # Check both full_entry and primary_error — either can carry the ID
+                full = error.get("full_entry", "").lower()
+                primary = error.get("primary_error", "").lower()
+                if identifier_lower in full or identifier_lower in primary:
                     matched_cluster = cluster
                     matched_cluster_index = ci
                     break
-            if matched_cluster:
+            if matched_cluster is not None:
                 break
 
-        # If not found in error clusters (entry might be INFO not ERROR)
-        # fall back to returning just the anchor entry
-        if not matched_cluster:
-            return {
-                "identifier": identifier,
-                "found": True,
-                "anchor_entry": anchor_raw,
-                "cluster": [],
-                "cluster_index": None,
-                "total_in_cluster": 1,
-                "note": "Entry found but not part of an error cluster.",
-            }
-
-        # Step 4 — format cluster entries, recent first
-        cluster_formatted = [
-            {
-                "timestamp": e["timestamp"].strftime("%Y-%m-%d %H:%M:%S") if e["timestamp"] else None,
-                "error_type": e["error_type"],
-                "primary_error": e["primary_error"],
-                "traceback": e.get("traceback", ""),
-                "full_entry": e.get("full_entry", ""),
-            }
-            for e in reversed(matched_cluster)
-        ]
+        # ── Step 3: format the cluster entries if found ───────────────────
+        cluster_formatted = []
+        if matched_cluster:
+            cluster_formatted = [
+                {
+                    "timestamp": (
+                        e["timestamp"].strftime("%Y-%m-%d %H:%M:%S")
+                        if e.get("timestamp") else None
+                    ),
+                    "error_type": e.get("error_type"),
+                    "primary_error": e.get("primary_error"),
+                    "traceback": e.get("traceback", ""),
+                    "full_entry": e.get("full_entry", ""),
+                }
+                for e in matched_cluster
+            ]
+            note = (
+                f"Found {total_found} log entries and {len(cluster_formatted)} "
+                f"entries in error cluster {matched_cluster_index}."
+            )
+            print(f"  [get_related_logs] Matched error cluster {matched_cluster_index} "
+                  f"({len(cluster_formatted)} entries)")
+        else:
+            note = (
+                f"Found {total_found} log entries for '{identifier}'. "
+                f"None belong to an error cluster (likely INFO/DEBUG/WARNING lines only)."
+            )
+            print(f"  [get_related_logs] No error cluster match — returning raw entries only")
 
         return {
             "identifier": identifier,
             "found": True,
-            "anchor_entry": anchor_raw,
-            "cluster": cluster_formatted,
+            "total_found": total_found,
+            "all_entries": all_entries,          # ALL lines — INFO, ERROR, DEBUG etc.
+            "error_cluster": cluster_formatted,  # only the error-cluster subset (may be [])
             "cluster_index": matched_cluster_index,
-            "total_in_cluster": len(matched_cluster),
+            "total_in_cluster": len(cluster_formatted),
+            "has_error_cluster": matched_cluster is not None,
+            "note": note,
         }
 
     def get_entry_details(self, identifier: str) -> Dict:
@@ -548,6 +596,8 @@ class LogTracer:
         """Internal: return cached reader or create new one."""
         if self._reader is None:
             self._read(date=date, from_dt=from_dt, to_dt=to_dt)
+        self._read(date=date, from_dt=from_dt, to_dt=to_dt)
+        logger.debug(f"SmartReader instance ready for use: {self._reader}")
         return self._reader
 
     def _get_extraction(

@@ -1,1 +1,5 @@
 src/pylogtracer/preprocessing/__pycache__/error_type_classifier.cpython-313.pyc
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd

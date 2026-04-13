@@ -4,6 +4,7 @@ pyproject.toml
 setup.cfg
 setup.py
 src/pylogtracer/__init__.py
+src/pylogtracer/application_logs.txt
 src/pylogtracer/logtracer.py
 src/pylogtracer.egg-info/PKG-INFO
 src/pylogtracer.egg-info/SOURCES.txt
@@ -11,6 +12,7 @@ src/pylogtracer.egg-info/dependency_links.txt
 src/pylogtracer.egg-info/requires.txt
 src/pylogtracer.egg-info/top_level.txt
 src/pylogtracer/agents/__init__.py
+src/pylogtracer/agents/qa_agent copy.py
 src/pylogtracer/agents/qa_agent.py
 src/pylogtracer/agents/root_cause_analyzer.py
 src/pylogtracer/llm/__init__.py
