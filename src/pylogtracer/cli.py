@@ -119,15 +119,34 @@ def _emit(label: str, value, as_json: bool):
         print(value)
 
 
-def main(argv: Optional[List[str]] = None) -> int:
-    # Logs (and reports) can contain non-ASCII; force UTF-8 so printing never
-    # crashes on a legacy Windows console (cp1252).
+def _force_utf8_stdout() -> None:
+    """Logs/reports may contain non-ASCII; avoid cp1252 crashes on Windows."""
     for stream in (sys.stdout, sys.stderr):
-        try:
-            stream.reconfigure(encoding="utf-8", errors="replace")
-        except (AttributeError, ValueError):
-            pass
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
 
+
+def _run_report(tracer, args) -> int:
+    """Render --report to stdout (or --output). Returns a process exit code."""
+    fmt = "html" if args.report == "html" else "markdown"
+    try:
+        rep = tracer.generate_report(
+            fmt, date=args.date, from_dt=args.from_dt, to_dt=args.to_dt,
+            include_root_cause=args.include_root_cause, output=args.output,
+        )
+    except Exception as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    print(f"wrote {fmt} report to {args.output}" if args.output else rep)
+    return 0
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    _force_utf8_stdout()
     args = build_parser().parse_args(argv)
 
     tracer = LogTracer(
@@ -150,17 +169,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # --report produces a whole document, not a labeled section — handle first.
     if args.report:
-        fmt = "html" if args.report == "html" else "markdown"
-        try:
-            rep = tracer.generate_report(
-                fmt, date=args.date, from_dt=args.from_dt, to_dt=args.to_dt,
-                include_root_cause=args.include_root_cause, output=args.output,
-            )
-        except Exception as e:
-            print(f"error: {e}", file=sys.stderr)
-            return 1
-        print(f"wrote {fmt} report to {args.output}" if args.output else rep)
-        return 0
+        return _run_report(tracer, args)
 
     # (enabled?, label, callable). Time-filterable actions take `tf`.
     actions = [
