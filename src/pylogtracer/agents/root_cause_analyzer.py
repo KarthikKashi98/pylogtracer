@@ -34,8 +34,9 @@ class RootCauseAnalyzer:
         factory: LLMFactory instance.
     """
 
-    def __init__(self, factory):
+    def __init__(self, factory, redactor=None):
         self.factory = factory
+        self.redactor = redactor  # optional callable(text)->text for the LLM boundary
         self._chain = None  # lazy-init LCEL chain
 
     # ─────────────────────────────────────────────────────────────
@@ -119,6 +120,11 @@ class RootCauseAnalyzer:
         extra_block = ""
         if extra_context:
             extra_block = f"\n[ADDITIONAL CONTEXT fetched on request]\n{extra_context}"
+        # Scrub PII/secrets right before the log text leaves for the LLM.
+        if self.redactor:
+            python_guess = self.redactor(python_guess)
+            context_text = self.redactor(context_text)
+            extra_block = self.redactor(extra_block)
         try:
             return self._get_chain().invoke(
                 {

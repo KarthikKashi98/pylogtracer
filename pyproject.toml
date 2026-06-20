@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name            = "pylogtracer"
-version         = "0.1.3"
+version         = "0.2.0"
 description     = "Provider-agnostic log analysis package with LLM support and LangGraph ReAct agent"
 readme          = "README.md"
 license         = "MIT"
@@ -44,19 +44,28 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 
+# Core install is light: only what library mode (offline) needs.
+# Install a provider/agent extra for LLM features, e.g. pip install pylogtracer[ollama]
 dependencies = [
-    "langchain>=0.2.0",
     "langchain-core>=0.2.0",
-    "langchain-openai>=0.1.0",
-    "langchain-anthropic>=0.1.0",
-    "langchain-ollama>=0.1.0",
-    "langgraph>=0.1.0",
     "pydantic>=2.0.0",
     "python-dotenv>=1.0.0",
 ]
 
 [project.optional-dependencies]
+openai = ["langchain-openai>=0.1.0"]
+anthropic = ["langchain-anthropic>=0.1.0"]
+ollama = ["langchain-ollama>=0.1.0"]
+agent = ["langgraph>=0.1.0", "langchain>=0.2.0"]
+all = [
+    "langchain>=0.2.0",
+    "langchain-openai>=0.1.0",
+    "langchain-anthropic>=0.1.0",
+    "langchain-ollama>=0.1.0",
+    "langgraph>=0.1.0",
+]
 dev = [
+    "pylogtracer[all]",
     "pytest>=7.0",
     "pytest-cov>=4.0",
     "flake8>=6.0",
@@ -66,6 +75,9 @@ dev = [
     "tox>=4.0",
     "tox-gh-actions>=3.0",
 ]
+
+[project.scripts]
+pylogtracer = "pylogtracer.cli:main"
 
 [project.urls]
 Homepage      = "https://github.com/KarthikKashi98/pylogtracer"
@@ -77,11 +89,13 @@ Documentation = "https://github.com/KarthikKashi98/pylogtracer#readme"
 where   = ["src"]
 
 [tool.setuptools.package-data]
-"*" = ["*.md", "*.txt"]
+pylogtracer = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v"
+# Run tests against the source tree, not any installed copy in site-packages.
+pythonpath = ["src"]
 
 [tool.mypy]
 python_version = "3.9"

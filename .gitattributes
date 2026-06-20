@@ -1,0 +1,2 @@
+# Normalize line endings: store text as LF in the repo on every platform.
+* text=auto eol=lf

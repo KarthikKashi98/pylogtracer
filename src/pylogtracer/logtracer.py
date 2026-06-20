@@ -31,6 +31,7 @@ Usage:
     tracer.ask("show me errors between 9am and 11am")
 """
 
+import os
 import logging
 from typing import Optional, Dict, List, Any
 
@@ -40,10 +41,24 @@ from pylogtracer.preprocessing.error_type_classifier import ErrorTypeClassifier
 from pylogtracer.agents.root_cause_analyzer import RootCauseAnalyzer
 from pylogtracer.multiagent.context_bridge import ContextBridge
 from pylogtracer.llm.llm_factory import LLMFactory
+from pylogtracer.utils.redaction import redact as redact_text
 
-# Setup logging for tool calls
+# Module logger. A library must NOT configure the root logger or force a
+# level — that is the application's job. We only attach a NullHandler so
+# importing the package never emits "No handlers" warnings.
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.addHandler(logging.NullHandler())
+
+
+def _human_duration(seconds: int) -> str:
+    """Render a second-count as a short human string ('6 minute(s) 12 second(s)')."""
+    mins, secs = divmod(seconds, 60)
+    hours, mins = divmod(mins, 60)
+    if hours:
+        return f"{hours}h {mins}m {secs}s"
+    if mins:
+        return f"{mins} minute(s) {secs} second(s)"
+    return f"{secs} second(s)"
 
 
 class LogTracer:
@@ -56,6 +71,36 @@ class LogTracer:
                      Keys: provider, model, api_key, base_url, temperature, max_tokens
         gap_seconds: Time gap (seconds) to separate error incidents. Default 60.
         max_retries: Max times LLM can request more context. Default 2.
+        cache_path:  JSON file to persist the classifier's learned keyword store
+                     across runs, so recurring error types classify for free on
+                     later runs. None = in-memory only (default).
+        max_context_tokens: Override the model context window used to size LLM
+                     classification batches. None = use per-model defaults.
+        level_aware: When True, detect errors from the parsed log LEVEL
+                     (ERROR/CRITICAL/FATAL) instead of a substring scan,
+                     avoiding false positives. Falls back to substring scan
+                     when a line has no level token. Default False.
+        include_warnings: When level_aware, also count WARN/WARNING as errors.
+        redact:      Scrub PII/secrets (emails, IPs, tokens, keys) from text sent
+                     to the LLM. None = AUTO (on for cloud providers, off for
+                     local Ollama). True/False forces it. Stored/returned data
+                     is never altered — only the LLM-bound copy.
+        max_lines:   Read only the last N lines (bounded memory for huge logs).
+        max_bytes:   Read only the last N bytes (tail of a plain file).
+        tail:        Convenience: keep only a recent window (defaults max_lines).
+        log_format:  "auto" (sniff JSON-lines, else text), "text" (never sniff),
+                     or "json" (treat every line as JSON). Default "auto".
+        json_keys:   Override the JSON field names for timestamp/level/message.
+        glob_rotated: Also read rotated siblings (app.log.1, app.log.2.gz),
+                     oldest first. Default False.
+        log_pattern: Custom log-format regex with named groups
+                     (?P<timestamp>...)(?P<level>...)(?P<message>...). Matching
+                     lines are normalized into the canonical text shape so any
+                     log format works. None = built-in formats. Default None.
+        timestamp_format: strptime format for the captured `timestamp` group
+                     (e.g. "%d/%m/%Y-%H:%M:%S"). None = best-effort parse.
+        evidence:    In ask() mode, append the actual tool-sourced log lines as
+                     verifiable "Evidence" under each answer. Default True.
     """
 
     def __init__(
@@ -64,13 +109,60 @@ class LogTracer:
         llm_config: Optional[Dict] = None,
         gap_seconds: int = 60,
         max_retries: int = 2,
+        cache_path: Optional[str] = None,
+        max_context_tokens: Optional[int] = None,
+        level_aware: bool = False,
+        include_warnings: bool = False,
+        redact: Optional[bool] = None,
+        max_lines: Optional[int] = None,
+        max_bytes: Optional[int] = None,
+        tail: bool = False,
+        log_format: str = "auto",
+        json_keys: Optional[Dict] = None,
+        glob_rotated: bool = False,
+        log_pattern: Optional[str] = None,
+        timestamp_format: Optional[str] = None,
+        evidence: bool = True,
     ):
         self.file_path = file_path
         self.gap_seconds = gap_seconds
         self.max_retries = max_retries
+        self.cache_path = cache_path
+        self.max_context_tokens = max_context_tokens
+        self.level_aware = level_aware
+        self.include_warnings = include_warnings
+        # Read/format options (forwarded to SmartReader on every read).
+        self.max_lines = max_lines
+        self.max_bytes = max_bytes
+        self.tail = tail
+        self.log_format = log_format
+        self.json_keys = json_keys
+        self.glob_rotated = glob_rotated
+        self.log_pattern = log_pattern
+        self.timestamp_format = timestamp_format
+        self.evidence = evidence
 
-        # LLM factory — shared across all modules
+        # LLM factory — shared across all modules. Always built so agent mode
+        # (ask / root_cause_analysis) has a provider to use.
         self._factory = LLMFactory(llm_config)
+
+        # Has the user actually configured an LLM? True if a config dict was
+        # passed OR any LLM_* env var is set. When False we keep the classifier
+        # fully offline (regex/pattern only) so plain `LogTracer("app.log")`
+        # library-mode calls never attempt a network connection — matching the
+        # "Library mode — no LLM needed" contract in the README.
+        self._llm_configured = bool(llm_config) or any(
+            os.getenv(var) for var in ("LLM_PROVIDER", "LLM_MODEL", "LLM_API_KEY", "LLM_BASE_URL")
+        )
+
+        # PII/secret redaction at the LLM boundary. Default (redact=None) is
+        # AUTO: on for cloud providers (data leaves the machine), off for local
+        # Ollama (nothing leaves, so no scrubbing needed).
+        if redact is None:
+            self.redact = self._factory.get_provider() in ("openai", "anthropic", "custom")
+        else:
+            self.redact = bool(redact)
+        self._redactor = redact_text if self.redact else None
 
         # Internal state — lazily populated
         self._reader: Any = None
@@ -80,8 +172,14 @@ class LogTracer:
         ] = None
 
         # Persist classifier across ask() calls so keyword store survives
-        # between questions — avoids re-learning same keywords every call
-        self._classifier = ErrorTypeClassifier(factory=self._factory)
+        # between questions — avoids re-learning same keywords every call.
+        # factory=None → regex/pattern-only when no LLM is configured.
+        self._classifier = ErrorTypeClassifier(
+            factory=self._factory if self._llm_configured else None,
+            cache_path=cache_path,
+            max_context_tokens=max_context_tokens,
+            redactor=self._redactor,
+        )
 
     # ─────────────────────────────────────────────────────────────
     # PUBLIC — Library mode
@@ -215,7 +313,7 @@ class LogTracer:
             return {"error": "No errors found in the specified range."}
 
         reader = self._get_reader(date=date, from_dt=from_dt, to_dt=to_dt)
-        analyzer = RootCauseAnalyzer(factory=self._factory)
+        analyzer = RootCauseAnalyzer(factory=self._factory, redactor=self._redactor)
         bridge = ContextBridge(reader=reader, analyzer=analyzer, max_retries=self.max_retries)
         return bridge.run(extraction)
 
@@ -254,9 +352,7 @@ class LogTracer:
             tracer.search("INC1033234")
             tracer.search("connection refused")
         """
-        msg = f"[SEARCH] Searching logs for keyword '{keyword}' with max_results={max_results}..."
-        print(msg)
-        logger.info(msg)
+        logger.info("[SEARCH] Searching logs for keyword '%s' with max_results=%d...", keyword, max_results)
         reader = self._get_reader()
         return reader.search_logs(keyword, max_results=max_results)
 
@@ -346,22 +442,75 @@ class LogTracer:
         end = max(timestamps)
         duration = int((end - start).total_seconds())
 
-        # Human readable
-        mins, secs = divmod(duration, 60)
-        hours, mins = divmod(mins, 60)
-        if hours:
-            human = f"{hours}h {mins}m {secs}s"
-        elif mins:
-            human = f"{mins} minute(s) {secs} second(s)"
-        else:
-            human = f"{secs} second(s)"
-
         return {
             "start": start.strftime("%Y-%m-%d %H:%M:%S"),
             "end": end.strftime("%Y-%m-%d %H:%M:%S"),
             "duration_seconds": duration,
-            "duration_human": human,
+            "duration_human": _human_duration(duration),
             "error_count": len(last),
+        }
+
+    def keyword_duration(self, keyword: str) -> Dict:
+        """
+        How long ANYTHING lasted — generic, intent-driven duration.
+
+        Find every log line that contains `keyword`, take the first and last
+        timestamped occurrence, and compute the elapsed time. The keyword can be
+        an incident id, a trace/request id, a path, a user, or an error phrase —
+        this does NOT assume the keyword is an "incident".
+
+        Returns:
+            {
+                "keyword":          str,
+                "found":            bool,
+                "occurrences":      int,    # matching log entries
+                "first_occurrence": str,    # earliest timestamp
+                "last_occurrence":  str,    # latest timestamp
+                "duration_seconds": int,
+                "duration_human":   str,    e.g. "6 minute(s) 12 second(s)"
+            }
+
+        Example:
+            tracer.keyword_duration("INC5000002")
+            tracer.keyword_duration("/api/checkout")
+            tracer.keyword_duration("connection refused")
+        """
+        reader = self._get_reader()
+        # Ask for everything (not the default cap) so first/last are accurate.
+        result = reader.search_logs(keyword, max_results=10_000_000)
+        entries = result.get("entries", [])
+
+        if not entries:
+            return {
+                "keyword": keyword,
+                "found": False,
+                "occurrences": 0,
+                "note": f"No log entries contain '{keyword}'.",
+            }
+
+        from pylogtracer.preprocessing import log_format
+
+        timestamps = [ts for ts in (log_format.extract_timestamp(e) for e in entries) if ts]
+        if not timestamps:
+            return {
+                "keyword": keyword,
+                "found": True,
+                "occurrences": len(entries),
+                "note": f"'{keyword}' found in {len(entries)} entries, but none had a parseable timestamp.",
+            }
+
+        start = min(timestamps)
+        end = max(timestamps)
+        duration = int((end - start).total_seconds())
+
+        return {
+            "keyword": keyword,
+            "found": True,
+            "occurrences": len(entries),
+            "first_occurrence": start.strftime("%Y-%m-%d %H:%M:%S"),
+            "last_occurrence": end.strftime("%Y-%m-%d %H:%M:%S"),
+            "duration_seconds": duration,
+            "duration_human": _human_duration(duration),
         }
 
     def get_related_logs(self, identifier: str) -> Dict:
@@ -407,7 +556,7 @@ class LogTracer:
             tracer.get_related_logs("INC1033234")
             tracer.get_related_logs("connection refused")
         """
-        print(f"  [get_related_logs] Searching for '{identifier}'...")
+        logger.info("[get_related_logs] Searching for '%s'...", identifier)
 
         # ── Step 1: search ALL log lines for the identifier ───────────────
         # Increase max_results so we don't miss any entries for busy incidents
@@ -416,7 +565,7 @@ class LogTracer:
         total_found = search_result.get("total_found", 0)
 
         if not all_entries:
-            print(f"  [get_related_logs] No entries found for '{identifier}'")
+            logger.info("[get_related_logs] No entries found for '%s'", identifier)
             return {
                 "identifier": identifier,
                 "found": False,
@@ -429,11 +578,14 @@ class LogTracer:
                 "note": f"No log entries found containing '{identifier}'.",
             }
 
-        print(f"  [get_related_logs] Found {total_found} raw entries. Scanning error clusters...")
+        logger.info(
+            "[get_related_logs] Found %d raw entries. Scanning error clusters...",
+            total_found,
+        )
 
         # ── Step 2: scan error clusters for the identifier ────────────────
-        # Match directly on identifier string — avoids the fragile 80-char
-        # fingerprint approach and works regardless of entry format.
+        # Match directly on the identifier string — avoids the fragile
+        # 80-char fingerprint approach and works regardless of entry format.
         extraction = self._get_extraction()
         clusters = extraction.get("clusters", [])
 
@@ -444,8 +596,8 @@ class LogTracer:
         for ci, cluster in enumerate(clusters):
             for error in cluster:
                 # Check both full_entry and primary_error — either can carry the ID
-                full = error.get("full_entry", "").lower()
-                primary = error.get("primary_error", "").lower()
+                full = (error.get("full_entry") or "").lower()
+                primary = (error.get("primary_error") or "").lower()
                 if identifier_lower in full or identifier_lower in primary:
                     matched_cluster = cluster
                     matched_cluster_index = ci
@@ -473,14 +625,17 @@ class LogTracer:
                 f"Found {total_found} log entries and {len(cluster_formatted)} "
                 f"entries in error cluster {matched_cluster_index}."
             )
-            print(f"  [get_related_logs] Matched error cluster {matched_cluster_index} "
-                  f"({len(cluster_formatted)} entries)")
+            logger.info(
+                "[get_related_logs] Matched error cluster %s (%d entries)",
+                matched_cluster_index,
+                len(cluster_formatted),
+            )
         else:
             note = (
                 f"Found {total_found} log entries for '{identifier}'. "
                 f"None belong to an error cluster (likely INFO/DEBUG/WARNING lines only)."
             )
-            print("  [get_related_logs] No error cluster match — returning raw entries only")
+            logger.info("[get_related_logs] No error cluster match — returning raw entries only")
 
         return {
             "identifier": identifier,
@@ -523,8 +678,7 @@ class LogTracer:
             }
 
         # Parse each matched entry for full details
-        from pylogtracer.preprocessing.error_extractor import ErrorExtractor
-
+        # (ErrorExtractor already imported at module top)
         extractor = ErrorExtractor()
         entries = []
         for raw_entry in search_result["entries"]:
@@ -558,8 +712,49 @@ class LogTracer:
         """
         from pylogtracer.agents.qa_agent import QAAgent
 
-        agent = QAAgent(tracer=self, factory=self._factory)
+        agent = QAAgent(tracer=self, factory=self._factory, redactor=self._redactor,
+                        evidence=self.evidence)
         return agent.run(question)
+
+    def generate_report(
+        self,
+        format: str = "markdown",
+        date: Optional[str] = None,
+        from_dt: Optional[str] = None,
+        to_dt: Optional[str] = None,
+        include_root_cause: bool = False,
+        output: Optional[str] = None,
+    ) -> str:
+        """
+        Build a shareable report (Markdown or HTML) of the analysis.
+
+        Library-mode by default (no LLM). Set include_root_cause=True to also
+        run the LLM root-cause analysis (needs a provider configured).
+
+        Args:
+            format:             "markdown" | "html"
+            date/from_dt/to_dt: optional time filter
+            include_root_cause: also include LLM root-cause section
+            output:             if given, also write the report to this path
+
+        Returns:
+            The rendered report string.
+
+        Example:
+            tracer.generate_report("html", output="report.html")
+            print(tracer.generate_report("markdown"))
+        """
+        from pylogtracer.reporting import build_report
+
+        report = build_report(
+            self, fmt=format, date=date, from_dt=from_dt, to_dt=to_dt,
+            include_root_cause=include_root_cause,
+        )
+        if output:
+            with open(output, "w", encoding="utf-8") as f:
+                f.write(report)
+            logger.info("[report] wrote %s report to %s", format, output)
+        return report
 
     # ─────────────────────────────────────────────────────────────
     # INTERNAL — used by qa_agent.py tools (not for direct user call)
@@ -578,6 +773,14 @@ class LogTracer:
             date=date,
             from_dt=from_dt,
             to_dt=to_dt,
+            max_lines=self.max_lines,
+            max_bytes=self.max_bytes,
+            tail=self.tail,
+            log_format_mode=self.log_format,
+            json_keys=self.json_keys,
+            glob_rotated=self.glob_rotated,
+            log_pattern=self.log_pattern,
+            timestamp_format=self.timestamp_format,
         )
         result = reader.fetch_logs_by_date(self.file_path)
         if "error" in result:
@@ -592,11 +795,15 @@ class LogTracer:
         from_dt: Optional[str] = None,
         to_dt: Optional[str] = None,
     ):
-        """Internal: return cached reader or create new one."""
+        """Internal: return cached reader or create new one.
+
+        The reader is (re)built only when there is no cached instance yet.
+        Previously this read the file twice on every call — once in the
+        guard and once unconditionally — doubling file I/O and parsing.
+        """
         if self._reader is None:
             self._read(date=date, from_dt=from_dt, to_dt=to_dt)
-        self._read(date=date, from_dt=from_dt, to_dt=to_dt)
-        logger.debug(f"SmartReader instance ready for use: {self._reader}")
+        logger.debug("SmartReader instance ready for use: %s", self._reader)
         return self._reader
 
     def _get_extraction(
@@ -624,8 +831,14 @@ class LogTracer:
         extractor = ErrorExtractor(
             gap_seconds=self.gap_seconds,
             classifier=self._classifier,
+            level_aware=self.level_aware,
+            include_warnings=self.include_warnings,
         )
         self._extraction = extractor.extract(log_entries)
         self._last_filter = current_filter
+
+        # Persist any keywords the classifier learned this run (no-op unless
+        # a cache_path was configured and something new was learned).
+        self._classifier.save()
 
         return self._extraction

@@ -1,0 +1,44 @@
+2026-06-19 08:00:01 INFO  [System] Application starting up, version 2.3.1
+2026-06-19 08:00:02 INFO  [Config] Loaded configuration from /etc/app/config.yaml
+2026-06-19 08:00:03 INFO  [Database] Connection pool initialized (size=20) at db-primary:5432
+2026-06-19 08:00:04 INFO  [Cache] Redis connected at redis-cache:6379
+2026-06-19 08:00:05 INFO  [Worker] Worker pool started with 8 workers
+2026-06-19 09:15:22 INFO  [API] Incoming request POST /api/orders REQ-4471
+2026-06-19 09:15:23 INFO  [Order] Processing order for user_id=8821 REQ-4471
+2026-06-19 09:15:24 ERROR [Payment] Payment gateway timeout after 30s - INC5000001 REQ-4471
+Traceback (most recent call last):
+  File "/app/services/payment.py", line 88, in charge
+    response = gateway.charge(amount, token)
+  File "/app/lib/http_client.py", line 142, in post
+    raise TimeoutError("Connection to payment-gateway timed out")
+TimeoutError: Connection to payment-gateway timed out
+2026-06-19 09:15:25 WARNING [Order] Order REQ-4471 marked as pending due to payment failure - INC5000001
+2026-06-19 09:15:26 INFO  [Order] Notification sent to user_id=8821 REQ-4471
+2026-06-19 10:02:11 INFO  [Auth] Login attempt for user 'admin' from 203.0.113.45
+2026-06-19 10:02:12 ERROR [Auth] Authentication failed: invalid credentials for 'admin' - INC5000002
+2026-06-19 10:02:18 ERROR [Auth] Authentication failed: invalid credentials for 'admin' - INC5000002
+2026-06-19 10:02:25 ERROR [Auth] Authentication failed: invalid credentials for 'admin' - INC5000002
+2026-06-19 10:02:26 CRITICAL [Auth] Account 'admin' locked after 3 failed attempts - INC5000002
+2026-06-19 11:30:45 INFO  [Database] Running scheduled maintenance check
+2026-06-19 11:30:47 ERROR [Database] Unable to connect to replica db-replica-2:5432 - INC5000003
+Traceback (most recent call last):
+  File "/app/db/pool.py", line 55, in acquire
+    conn = socket.create_connection((host, port), timeout=5)
+ConnectionError: [Errno 111] Connection refused
+2026-06-19 11:30:50 WARNING [Database] Failing over to db-replica-1:5432 - INC5000003
+2026-06-19 11:30:52 INFO  [Database] Failover successful, replica db-replica-1 active - INC5000003
+2026-06-19 13:45:10 INFO  [API] Incoming request GET /api/reports REQ-4502
+2026-06-19 13:45:11 ERROR [Reports] Failed to generate report: division by zero - INC5000004 REQ-4502
+Traceback (most recent call last):
+  File "/app/reports/generator.py", line 203, in compute_ratio
+    ratio = total_sales / num_days
+ZeroDivisionError: division by zero
+2026-06-19 13:45:12 INFO  [Reports] Falling back to cached report - INC5000004
+2026-06-19 14:20:33 ERROR [Worker] Worker process 3 crashed unexpectedly - INC5000005
+2026-06-19 14:20:34 ERROR [Worker] Out of memory: unable to allocate 512MB buffer - INC5000005
+Traceback (most recent call last):
+  File "/app/worker/processor.py", line 311, in process_batch
+    results = [transform(x) for x in huge_dataset]
+MemoryError: Unable to allocate array
+2026-06-19 14:20:40 INFO  [Worker] Restarting worker process 3 - INC5000005
+2026-06-19 16:00:00 INFO  [System] Hourly health check OK - 5 incidents logged today

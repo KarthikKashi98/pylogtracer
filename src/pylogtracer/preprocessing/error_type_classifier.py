@@ -28,8 +28,14 @@ Usage:
 """
 
 import re
+import os
+import json
 import math
+import logging
+import tempfile
 from typing import List, Dict, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 try:
     from pydantic import BaseModel, Field  # type: ignore
@@ -151,13 +157,53 @@ class ErrorTypeClassifier:
 
     # Prompt built lazily in _get_structured_llm() — avoids LangChain import at class load time
 
-    def __init__(self, factory=None):
+    # Volatile tokens stripped when dedup_strip_ids=True, so that lines
+    # differing only by incident/request id or UUID collapse to one LLM call.
+    _VOLATILE_RE = re.compile(
+        r"\b(INC\d+|REQ-?\w+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b",
+        re.IGNORECASE,
+    )
+
+    def __init__(
+        self,
+        factory=None,
+        cache_path: Optional[str] = None,
+        max_context_tokens: Optional[int] = None,
+        max_entry_chars: int = 500,
+        dedup: bool = True,
+        dedup_strip_ids: bool = False,
+        redactor=None,
+    ):
+        """
+        Args:
+            factory:            LLMFactory instance. None = regex/pattern-only.
+            cache_path:         JSON file to persist the learned keyword store
+                                across runs. None = in-memory only (default).
+            max_context_tokens: Override the model context window used to size
+                                LLM batches. None = use MODEL_CONTEXT_WINDOWS.
+            max_entry_chars:    Per-line cap on the text sent to the LLM (the
+                                stored entry is never mutated). Default 500.
+            dedup:              Classify identical unknown lines once and fan the
+                                result out to duplicates. Default True.
+            dedup_strip_ids:    When deduping, also collapse lines that differ
+                                only by incident/request id or UUID. Default False.
+        """
         self.factory = factory
         self._structured_llm = None
+        self.cache_path = cache_path
+        self.max_context_tokens = max_context_tokens
+        self.max_entry_chars = max_entry_chars
+        self.dedup = dedup
+        self.dedup_strip_ids = dedup_strip_ids
+        self.redactor = redactor  # optional callable(text)->text for the LLM boundary
+        self._dirty = False  # set when new keywords are learned; gates save()
 
         # keyword_store: { error_type -> [keyword_phrase, ...] }
-        # Built up during this session as LLM classifies new types
+        # Built up during this session as LLM classifies new types; optionally
+        # loaded from / saved to cache_path so it survives across runs.
         self._keyword_store: Dict[str, List[str]] = {}
+        if cache_path:
+            self._load_keyword_store()
 
     # ─────────────────────────────────────────────────────────────
     # PUBLIC
@@ -216,42 +262,68 @@ class ErrorTypeClassifier:
         keyword_count = sum(1 for e in error_entries if e["type_source"] == "keyword")
         llm_count = len(needs_llm)
 
-        print(f"  [Classifier] regex={regex_count} | " f"keyword_store={keyword_count} | " f"llm_needed={llm_count}")
+        logger.info("[Classifier] regex=%d | keyword_store=%d | llm_needed=%d", regex_count, keyword_count, llm_count)
 
         if not needs_llm:
             return error_entries
 
         if self.factory is None:
-            print("  [Classifier] ⚠️  No LLM factory configured")
-            print("              Using only pattern-based classification (above)")
-            print("              To enable LLM learning, pass LLMFactory to ErrorTypeClassifier")
+            logger.info(
+                "[Classifier] No LLM configured — using pattern-based classification only. "
+                "Pass an llm_config to LogTracer to enable LLM classification and keyword learning."
+            )
             return error_entries
+
+        # Within-run dedup: classify each distinct primary_error ONCE and fan
+        # the result out to its duplicates. Tie entries carry per-entry hints,
+        # so they are always classified individually (never deduped).
+        dup_groups: Dict[str, List[Dict]] = {}
+        if self.dedup:
+            representatives = []
+            for entry in needs_llm:
+                if entry.get("_tie_candidates"):
+                    representatives.append(entry)
+                    continue
+                key = self._dedup_key(entry["primary_error"])
+                if key in dup_groups:
+                    dup_groups[key].append(entry)
+                else:
+                    dup_groups[key] = [entry]
+                    representatives.append(entry)
+            to_classify = representatives
+        else:
+            to_classify = needs_llm
+
+        if self.dedup and len(to_classify) < len(needs_llm):
+            logger.info(
+                "[Classifier] dedup: %d unknown lines -> %d unique sent to LLM",
+                len(needs_llm), len(to_classify),
+            )
 
         # Pass 3 — LLM batch
         batch_size = self._compute_batch_size()
-        print(f"  [Classifier] model={self.factory.get_model()} | " f"batch_size={batch_size}")
+        logger.info("[Classifier] model=%s | batch_size=%d", self.factory.get_model(), batch_size)
 
         seen_types: Dict[str, Dict] = {}
-        batches = [needs_llm[i : i + batch_size] for i in range(0, len(needs_llm), batch_size)]
+        batches = [to_classify[i : i + batch_size] for i in range(0, len(to_classify), batch_size)]
 
         for batch_num, batch in enumerate(batches, 1):
-            print(f"  [Classifier] Batch {batch_num}/{len(batches)} " f"({len(batch)} entries)...")
+            logger.info("[Classifier] Batch %d/%d (%d entries)...", batch_num, len(batches), len(batch))
 
             result = self._classify_batch(batch)
 
             if not result:
-                print(f"  [Classifier] Batch {batch_num} failed — " f"keeping UnknownError")
+                logger.warning("[Classifier] Batch %d failed — keeping UnknownError", batch_num)
                 continue
 
-            # Debug: show what LLM returned
-            print(f"  [Classifier] LLM returned {len(result)} classifications:")
+            logger.debug("[Classifier] LLM returned %d classifications", len(result))
             for idx, classification in result.items():
-                print(f"              [{idx}] {classification.error_type} (keywords: {len(classification.keywords)})")
+                logger.debug("              [%s] %s (keywords: %d)", idx, classification.error_type, len(classification.keywords))
 
             for i, entry in enumerate(batch):
                 classification_item = result.get(str(i + 1))
                 if not classification_item:
-                    print(f"  [Classifier]   [WARN] Entry {i + 1} missing from LLM result")
+                    logger.warning("[Classifier] Entry %d missing from LLM result", i + 1)
                     continue
 
                 llm_type = self._normalize_type(classification_item.error_type)
@@ -262,19 +334,16 @@ class ErrorTypeClassifier:
                     entry["error_type"] = "NonError"
                     entry["is_duplicate"] = False
                     entry["type_source"] = "llm_non_error"
-                    print(f"  [Classifier]   Classified as NonError: '{entry['primary_error'][:60]}...'")
+                    logger.debug("[Classifier] Classified as NonError: '%s...'", entry["primary_error"][:60])
                     continue
 
-                print(f"  [Classifier]   Applying: {llm_type} to '{entry['primary_error'][:60]}...'")
+                logger.debug("[Classifier] Applying: %s to '%s...'", llm_type, entry["primary_error"][:60])
 
                 # Learn validated keywords into store (only for real errors)
                 valid_kws = self._validate_keywords(keywords)
                 if valid_kws:
                     self._learn_keywords(llm_type, valid_kws)
-                    print(
-                        f"  [Classifier]   >> Learned {len(valid_kws)} "
-                        f"keyword(s) for {llm_type}: {valid_kws}"
-                    )
+                    logger.debug("[Classifier] Learned %d keyword(s) for %s: %s", len(valid_kws), llm_type, valid_kws)
 
                 if llm_type != "UnknownError" and llm_type in seen_types:
                     entry["error_type"] = llm_type
@@ -287,11 +356,69 @@ class ErrorTypeClassifier:
                     entry["type_source"] = "llm"
                     seen_types[llm_type] = entry
 
+        # Fan the representative's classification out to its deduped duplicates.
+        # Each duplicate keeps its OWN timestamp; only the label is copied.
+        if self.dedup:
+            for group in dup_groups.values():
+                if len(group) < 2:
+                    continue
+                rep = group[0]
+                for dup in group[1:]:
+                    dup["error_type"] = rep["error_type"]
+                    dup["type_source"] = rep["type_source"]
+                    dup["is_duplicate"] = True
+
         return error_entries
 
     def get_keyword_store(self) -> Dict[str, List[str]]:
         """Return current keyword store (for inspection/debugging)."""
         return dict(self._keyword_store)
+
+    # ─────────────────────────────────────────────────────────────
+    # PRIVATE — dedup + persistence
+    # ─────────────────────────────────────────────────────────────
+
+    def _dedup_key(self, primary_error: str) -> str:
+        """Normalized key used to collapse identical unknown lines before the LLM."""
+        key = re.sub(r"\s+", " ", primary_error.strip().lower())
+        if self.dedup_strip_ids:
+            key = self._VOLATILE_RE.sub("<id>", key)
+        return key
+
+    def _load_keyword_store(self) -> None:
+        """Load the learned keyword store from cache_path (best-effort, never crash)."""
+        if not self.cache_path or not os.path.exists(self.cache_path):
+            return
+        try:
+            with open(self.cache_path, encoding="utf-8") as f:
+                data = json.load(f)
+            store = data.get("store") if isinstance(data, dict) else None
+            if isinstance(store, dict) and all(isinstance(v, list) for v in store.values()):
+                self._keyword_store = {str(k): [str(x) for x in v] for k, v in store.items()}
+                logger.info(
+                    "[Classifier] Loaded %d learned error type(s) from %s",
+                    len(self._keyword_store), self.cache_path,
+                )
+            else:
+                logger.warning("[Classifier] Ignoring malformed keyword cache at %s", self.cache_path)
+        except Exception as e:
+            logger.warning("[Classifier] Could not load keyword cache (%s); starting empty", e)
+
+    def save(self) -> None:
+        """Persist the keyword store to cache_path atomically, if anything was learned."""
+        if not self.cache_path or not self._dirty:
+            return
+        try:
+            target_dir = os.path.dirname(os.path.abspath(self.cache_path))
+            os.makedirs(target_dir, exist_ok=True)
+            fd, tmp = tempfile.mkstemp(dir=target_dir, suffix=".tmp")
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump({"version": 1, "store": self._keyword_store}, f, indent=2)
+            os.replace(tmp, self.cache_path)
+            self._dirty = False
+            logger.debug("[Classifier] Saved keyword store to %s", self.cache_path)
+        except Exception as e:
+            logger.warning("[Classifier] Could not save keyword cache: %s", e)
 
     # ─────────────────────────────────────────────────────────────
     # PRIVATE — classification passes
@@ -355,7 +482,7 @@ class ErrorTypeClassifier:
 
         # Sort by: (1) match count DESC, (2) keyword length sum DESC
         ranked = sorted(scores.items(), key=lambda x: (match_counts[x[0]], match_lengths[x[0]]), reverse=True)
-        best_type, best_score = ranked[0]
+        best_type = ranked[0][0]
 
         # True tie — second type has the exact same match count AND length
         if len(ranked) > 1 and (
@@ -464,9 +591,10 @@ class ErrorTypeClassifier:
                 learned.append(kw)
 
         if learned:
-            print(f"  [Classifier]   Stored unique keywords: {learned}")
+            self._dirty = True
+            logger.debug("[Classifier] Stored unique keywords: %s", learned)
         else:
-            print(f"  [Classifier]   No unique keywords learned (too similar to existing types)")
+            logger.debug("[Classifier] No unique keywords learned (too similar to existing types)")
 
     # ─────────────────────────────────────────────────────────────
     # PRIVATE — batch sizing
@@ -474,8 +602,9 @@ class ErrorTypeClassifier:
 
     def _compute_batch_size(self) -> int:
         model = self.factory.get_model() if self.factory else "default"
-        context = MODEL_CONTEXT_WINDOWS.get(model, 8192)
-        usable = context - PROMPT_OVERHEAD_TOKENS
+        # An explicit token budget overrides the per-model context window.
+        context = self.max_context_tokens or MODEL_CONTEXT_WINDOWS.get(model, 8192)
+        usable = max(1, context - PROMPT_OVERHEAD_TOKENS)
         size = math.floor(usable / TOKENS_PER_ENTRY)
         return max(MIN_BATCH_SIZE, min(size, MAX_BATCH_SIZE))
 
@@ -520,7 +649,12 @@ class ErrorTypeClassifier:
     def _classify_batch(self, batch: List[Dict]) -> Optional[Dict[str, EntryClassification]]:  # noqa: C901
         lines = []
         for i, entry in enumerate(batch):
-            line = f"[{i + 1}] {entry['primary_error']}"
+            # Truncate only the COPY sent to the LLM; never mutate the stored
+            # entry (it is reused for clustering and output).
+            primary = entry["primary_error"]
+            if self.max_entry_chars and len(primary) > self.max_entry_chars:
+                primary = primary[: self.max_entry_chars] + "…"
+            line = f"[{i + 1}] {primary}"
             # If this entry is a tie, give LLM the candidates as a hint
             candidates = entry.get("_tie_candidates")
             if candidates:
@@ -529,6 +663,10 @@ class ErrorTypeClassifier:
 
         entries_text = "\n".join(lines)
 
+        # Scrub PII/secrets right before the text leaves for the LLM.
+        if self.redactor:
+            entries_text = self.redactor(entries_text)
+
         try:
             chain = self._get_structured_llm()
             result = chain.invoke({"entries_text": entries_text})
@@ -536,36 +674,37 @@ class ErrorTypeClassifier:
             # LLM may return classifications keyed by ID (INC2000003) or index (1, 2, 3)
             # Remap IDs to numeric indices for consistency
             classifications = result.classifications
-            remapped = {}
 
             # Check if keys are numeric strings
-            numeric_keys = all(k.isdigit() for k in classifications.keys())
+            numeric_keys = bool(classifications) and all(k.isdigit() for k in classifications.keys())
 
-            if not numeric_keys:
-                # Keys are probably IDs (INC2000003, etc)
-                # Map them back to indices [1], [2], etc
-                for orig_idx, entry in enumerate(batch, 1):
-                    # Try to find a match by primary_error content
-                    found = False
-                    for key, classification in classifications.items():
-                        # Check if this classification might be for this entry
-                        # Use a simple heuristic: similar error type or first N that match
-                        remapped[str(orig_idx)] = classification
-                        found = True
-                        break  # Take first available
-                    if not found:
-                        print(
-                            f"  [Classifier] [WARN] Could not map entry {orig_idx} from LLM keys: {list(classifications.keys())}"
-                        )
-                return remapped if remapped else classifications
+            if numeric_keys:
+                return classifications
 
-            return classifications
+            # Keys are not numeric (e.g. INC IDs). The prompt asks the model to
+            # preserve input order, so map the values back to positional indices
+            # 1..N by iterating in the order the model returned them. Previously
+            # this assigned the FIRST classification to every entry — a bug that
+            # gave all entries in the batch the same error type.
+            remapped: Dict[str, EntryClassification] = {}
+            values = list(classifications.values())
+            for orig_idx, _entry in enumerate(batch, 1):
+                pos = orig_idx - 1
+                if pos < len(values):
+                    remapped[str(orig_idx)] = values[pos]
+                else:
+                    logger.warning(
+                        "[Classifier] Entry %d missing from LLM result (keys: %s)",
+                        orig_idx,
+                        list(classifications.keys()),
+                    )
+            return remapped if remapped else classifications
 
         except Exception as e:
-            print(f"  [Classifier] [ERROR] LLM call failed: {e}")
-            import traceback
-
-            traceback.print_exc()
+            # Recoverable: unknown entries keep UnknownError / first tie candidate.
+            # Log at warning without a full traceback (traceback only at debug).
+            logger.warning("[Classifier] LLM call failed, falling back: %s", e)
+            logger.debug("[Classifier] LLM call traceback", exc_info=True)
             # On failure — fall back to first candidate
             fallback = {}
             for i, entry in enumerate(batch):

@@ -38,8 +38,11 @@ Usage:
 """
 
 import os
+import logging
 from typing import Optional, Dict, Any, TYPE_CHECKING
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 # LangChain base types — imported for type checking only
 # At runtime we use Any to avoid hard dependency crashes
@@ -147,7 +150,7 @@ class LLMFactory:
                 f"Choose from: {SUPPORTED_PROVIDERS}"
             )
 
-        print(f"  [LLMFactory] provider={provider} | model={model}")
+        logger.info("[LLMFactory] provider=%s | model=%s", provider, model)
 
         if provider == PROVIDER_OPENAI:
             return self._build_openai(model, api_key, base_url, temperature,

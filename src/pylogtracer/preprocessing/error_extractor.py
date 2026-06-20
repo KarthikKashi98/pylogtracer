@@ -18,11 +18,14 @@ Usage:
 """
 
 import re
+import logging
 from typing import List, Dict, Optional
 from datetime import datetime
 from collections import Counter
 
 from pylogtracer.preprocessing.error_type_classifier import ErrorTypeClassifier
+
+logger = logging.getLogger(__name__)
 
 
 class ErrorExtractor:
@@ -33,6 +36,14 @@ class ErrorExtractor:
 
     ERROR_WORDS = ["error", "exception", "failed", "critical", "fatal"]
     TRACEBACK_WORD = "traceback"
+
+    # Standalone, UPPERCASE level tokens (case-sensitive on the raw line so the
+    # word "error" inside prose / a URL does not match). Used by level_aware mode.
+    LEVEL_RE = re.compile(
+        r"\b(TRACE|DEBUG|INFO|NOTICE|WARN|WARNING|ERROR|ERR|CRITICAL|CRIT|FATAL)\b"
+    )
+    ERROR_LEVELS = {"ERROR", "ERR", "CRITICAL", "CRIT", "FATAL"}
+    WARN_LEVELS = {"WARN", "WARNING"}
 
     TIMESTAMP_PATTERNS = [
         (r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", "%Y-%m-%d %H:%M:%S"),
@@ -45,14 +56,24 @@ class ErrorExtractor:
         self,
         gap_seconds: int = 60,
         classifier: Optional[ErrorTypeClassifier] = None,
+        level_aware: bool = False,
+        include_warnings: bool = False,
     ):
         """
         Args:
-            gap_seconds:  Time gap (seconds) to separate incidents. Default 60s.
-            classifier:   ErrorTypeClassifier instance. If None, uses regex only.
+            gap_seconds:      Time gap (seconds) to separate incidents. Default 60s.
+            classifier:       ErrorTypeClassifier instance. If None, uses regex only.
+            level_aware:      When True, decide "is this an error?" from the parsed
+                              log LEVEL token (ERROR/CRITICAL/FATAL) instead of a
+                              substring scan — killing false positives like
+                              "error" inside a URL. Falls back to the substring
+                              scan when a line has no recognizable level. Default False.
+            include_warnings: When level_aware, also treat WARN/WARNING as errors.
         """
         self.gap_seconds = gap_seconds
         self.classifier = classifier  # None = regex-only mode
+        self.level_aware = level_aware
+        self.include_warnings = include_warnings
 
     # ─────────────────────────────────────────────────────────────
     # PUBLIC
@@ -116,7 +137,32 @@ class ErrorExtractor:
     # ─────────────────────────────────────────────────────────────
 
     def _entry_has_error(self, entry: str) -> bool:
+        if self.level_aware:
+            level = self._detect_level(entry)
+            if level is not None:
+                # A level token was found → decide purely from the level.
+                if level in self.ERROR_LEVELS:
+                    return True
+                if self.include_warnings and level in self.WARN_LEVELS:
+                    return True
+                return False
+            # No level token on the header → fall back to substring scan.
         return any(w in entry.lower() for w in self.ERROR_WORDS)
+
+    def _detect_level(self, entry: str) -> Optional[str]:
+        """
+        Return the first standalone UPPERCASE level token on the entry's first
+        line (after stripping a leading timestamp), or None if none is present.
+        """
+        first_line = entry.splitlines()[0] if entry else ""
+        # Strip a leading timestamp so a date never shadows the level scan.
+        for pattern, _fmt in self.TIMESTAMP_PATTERNS:
+            m = re.match(r"\s*" + pattern, first_line)
+            if m:
+                first_line = first_line[m.end():]
+                break
+        m = self.LEVEL_RE.search(first_line)
+        return m.group(1) if m else None
 
     # ─────────────────────────────────────────────────────────────
     # PRIVATE — parsing
@@ -254,7 +300,10 @@ class ErrorExtractor:
                     # Already seen in an earlier cluster → merge into it
                     target_ci = type_to_cluster[etype]
                     if target_ci != ci and merged_clusters[target_ci] is not None:
-                        print(f"  [Extractor] Merging cluster {ci} into cluster " f"{target_ci} (duplicate type: {etype})")
+                        logger.debug(
+                            "[Extractor] Merging cluster %d into cluster %d (duplicate type: %s)",
+                            ci, target_ci, etype,
+                        )
                         target_cluster = merged_clusters[target_ci]
                         if target_cluster is not None:
                             target_cluster.extend(cluster)

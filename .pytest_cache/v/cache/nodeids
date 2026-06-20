@@ -1,4 +1,0 @@
-[
-  "tests/integration/test_example.py::test_empty",
-  "tests/unit/test_unit_example.py::test_empty1"
-]

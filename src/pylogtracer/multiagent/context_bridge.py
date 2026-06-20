@@ -21,7 +21,10 @@ Usage:
 """
 
 import re
+import logging
 from typing import Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 
 # How Qwen signals it needs more context.
@@ -117,10 +120,12 @@ class ContextBridge:
             timestamp = need_more["timestamp"]
             reason = need_more["reason"]
 
-            print(f"\n  [ContextBridge] Qwen needs more context:")
-            print(f"    Timestamp : {timestamp}")
-            print(f"    Reason    : {reason or 'not specified'}")
-            print(f"    Fetching  : ±{self.context_lines_per_request} lines from SmartReader...")
+            logger.info(
+                "[ContextBridge] LLM needs more context: timestamp=%s | reason=%s | fetching ±%d lines",
+                timestamp,
+                reason or "not specified",
+                self.context_lines_per_request,
+            )
 
             fetch_result = self.reader.fetch_lines_around(
                 timestamp=timestamp,
@@ -128,7 +133,7 @@ class ContextBridge:
             )
 
             if not fetch_result.get("found"):
-                print(f"  [ContextBridge] Timestamp not found in file — stopping retry.")
+                logger.info("[ContextBridge] Timestamp not found in file — stopping retry.")
                 result["retries_used"] = retries_used
                 result["extra_contexts"] = extra_contexts
                 return result
@@ -138,12 +143,12 @@ class ContextBridge:
             extra_text += f"\n\n[Extra context around {timestamp} — fetched on request]\n"
             extra_text += fetch_result["lines"]
 
-            print(f"  [ContextBridge] Got {len(fetch_result['lines'].splitlines())} extra lines. Retrying...")
+            logger.info("[ContextBridge] Got %d extra lines. Retrying...", len(fetch_result["lines"].splitlines()))
 
             retries_used += 1
 
         # Max retries hit — return whatever we have
-        print(f"\n  [ContextBridge] Max retries ({self.max_retries}) reached.")
+        logger.info("[ContextBridge] Max retries (%d) reached.", self.max_retries)
         result["retries_used"] = retries_used
         result["extra_contexts"] = extra_contexts
         return result

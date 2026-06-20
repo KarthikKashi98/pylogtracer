@@ -33,9 +33,21 @@ It supports any LLM provider — Ollama (local), OpenAI, Anthropic, or any custo
 
 ## Installation
 
+The core install is light (library mode works offline). Add an extra only for the
+LLM provider you actually use:
+
 ```bash
-pip install pylogtracer
+pip install pylogtracer            # core: library mode, reports, custom parsers
+pip install pylogtracer[ollama]    # + Ollama (local models)
+pip install pylogtracer[openai]    # + OpenAI
+pip install pylogtracer[anthropic] # + Anthropic
+pip install pylogtracer[agent]     # + LangGraph ReAct agent (ask())
+pip install pylogtracer[all]       # everything
 ```
+
+> Agent mode (`ask()`) needs the `agent` extra; LLM classification / root-cause
+> need a provider extra. Library-mode methods (`summary`, `search`,
+> `error_frequency`, `generate_report`, …) work with just the core install.
 
 ---
 
@@ -261,8 +273,8 @@ Pass 3 — LLM batch (only truly unknown errors):
 
 ```python
 LogTracer(
-    file_path   = "app.log",    # path to log file
-    llm_config  = {             # LLM provider config
+    file_path   = "app.log",    # path to log file (.log/.txt/.jsonl/.gz)
+    llm_config  = {             # LLM provider config (None = library mode)
         "provider":    "ollama",
         "model":       "qwen2.5:7b",
         "base_url":    "http://localhost:11434",
@@ -272,8 +284,89 @@ LogTracer(
     },
     gap_seconds = 60,           # seconds between entries to split incidents
     max_retries = 2,            # max times LLM can request more context
+
+    # ── 0.2.0 — robustness & cost ──────────────────────────────────
+    cache_path  = ".plt_cache.json",  # persist learned keywords across runs
+    max_context_tokens = None,        # override model context window for batching
+    level_aware = False,        # detect errors from the LEVEL field, not substrings
+    include_warnings = False,   # with level_aware, also count WARN/WARNING
+
+    # ── 0.2.0 — large files & formats ─────────────────────────────
+    tail        = False,        # read only a recent window (huge logs)
+    max_lines   = None,         # read only the last N lines
+    max_bytes   = None,         # read only the last N bytes
+    log_format  = "auto",       # "auto" | "text" | "json" (JSON-lines)
+    json_keys   = None,         # override JSON timestamp/level/message keys
+    glob_rotated = False,       # also read app.log.1, app.log.2.gz
+
+    # ── 0.2.0 — trust ─────────────────────────────────────────────
+    redact      = None,         # None=auto (on for cloud, off for local Ollama)
+    evidence    = True,         # ask() answers carry the supporting log lines
+
+    # ── custom log format (any layout) ────────────────────────────
+    log_pattern = None,         # regex w/ named groups (timestamp/level/message)
+    timestamp_format = None,    # strptime fmt for the captured timestamp
 )
 ```
+
+> **Cost note:** with `cache_path` set, error types the LLM classified in a
+> previous run are recognized for free, so the tokens sent to the model stay
+> roughly flat no matter how large the log grows.
+
+---
+
+## Command-Line Interface
+
+Installing the package also installs a `pylogtracer` command:
+
+```bash
+pylogtracer app.log --summary
+pylogtracer app.log --frequency --health
+pylogtracer app.log --search INC5000002
+pylogtracer app.log --tail --max-lines 100000 --level-aware --health
+pylogtracer app.log --format json --health         # JSON-lines logs
+pylogtracer app.log --summary --json                # machine-readable output
+pylogtracer app.log --report markdown               # full Markdown report
+pylogtracer app.log --report html -o report.html    # HTML report to a file
+
+# Agent mode (LLM):
+pylogtracer app.log --ask "what caused the crash?" \
+    --provider ollama --model qwen2.5:3b
+```
+
+---
+
+## Reports
+
+Generate a shareable report (no LLM needed):
+
+```python
+print(tracer.generate_report("markdown"))
+tracer.generate_report("html", output="report.html")
+tracer.generate_report("markdown", include_root_cause=True)  # adds LLM root cause
+```
+
+---
+
+## Custom log formats
+
+Point pylogtracer at *any* layout with a regex (named groups
+`timestamp` / `level` / `message`); matching lines are normalized internally so
+every feature still works:
+
+```python
+tracer = LogTracer(
+    "weird.log",
+    log_pattern = r"(?P<timestamp>\d{2}/\d{2}/\d{4}-\d{2}:\d{2}:\d{2})\s*\|\s*"
+                  r"(?P<level>\w+)\s*\|\s*(?P<message>.*)",
+    timestamp_format = "%d/%m/%Y-%H:%M:%S",
+    level_aware = True,
+)
+```
+
+Built-in formats (`YYYY-MM-DD HH:MM:SS`, ISO `T`, `DD-MM-YYYY`, `YYYY/MM/DD`),
+JSON-lines, and gzip are detected automatically — a custom pattern is only for
+non-standard layouts.
 
 ---
 

@@ -21,19 +21,49 @@ Usage:
     )
 """
 
-import re
+import logging
 from datetime import datetime, timedelta
 from typing import Optional
 
+from pylogtracer.preprocessing import log_format
+
+logger = logging.getLogger(__name__)
+
 
 class get_file_content:
-    def __init__(self, relative_day=None, date=None, from_dt=None, to_dt=None):
+    def __init__(
+        self,
+        relative_day=None,
+        date=None,
+        from_dt=None,
+        to_dt=None,
+        max_lines=None,
+        max_bytes=None,
+        tail=False,
+        log_format_mode="auto",
+        json_keys=None,
+        glob_rotated=False,
+        log_pattern=None,
+        timestamp_format=None,
+    ):
         if from_dt and not to_dt:
             to_dt = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.relative_day = relative_day
         self.date = date
         self.from_dt = from_dt
         self.to_dt = to_dt
+        # Bounded-read / format options (all default to today's behavior).
+        # `tail` is a convenience alias for "keep only the recent window".
+        if tail and not max_lines and not max_bytes:
+            max_lines = 50_000
+        self.max_lines = max_lines
+        self.max_bytes = max_bytes
+        self.log_format_mode = log_format_mode
+        self.json_keys = json_keys
+        self.glob_rotated = glob_rotated
+        self.log_pattern = log_pattern
+        self.timestamp_format = timestamp_format
+        self._capped = bool(max_lines or max_bytes)
         self._last_file = None  # set when fetch_logs_by_date() is called
         self._all_lines = []  # cached for fetch_lines_around() agent callback
 
@@ -107,14 +137,23 @@ class get_file_content:
             }
         """
         try:
-            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
-                lines = f.readlines()
+            lines = log_format.read_lines(
+                file_path,
+                max_lines=self.max_lines,
+                max_bytes=self.max_bytes,
+                log_format=self.log_format_mode,
+                json_keys=self.json_keys,
+                glob_rotated=self.glob_rotated,
+                log_pattern=self.log_pattern,
+                timestamp_format=self.timestamp_format,
+            )
         except FileNotFoundError:
             return {"error": f"File not found: {file_path}"}
         except Exception as e:
             return {"error": f"Failed to read file: {e}"}
 
-        # Cache all lines for agent callbacks (fetch_lines_around)
+        # Cache all lines for agent callbacks (fetch_lines_around). With a cap,
+        # this is the recent window — search/context-fetch are scoped to it.
         self._last_file = file_path
         self._all_lines = lines
 
@@ -122,37 +161,20 @@ class get_file_content:
         no_filter = not (self.relative_day or (self.from_dt and self.to_dt) or self.date)
         if no_filter:
             entries = self._group_into_entries(lines)
-            return {
+            result = {
                 "file": file_path,
                 "filter": None,
                 "total_matched": len(entries),
                 "logs": entries,
             }
+            if self._capped:
+                result["truncated"] = True
+            return result
 
         pick_date = self._pick_datetime()
 
-        TIMESTAMP_PATTERNS = [
-            r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}",
-            r"\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}",
-            r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}",
-            r"\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}",
-        ]
-        TIMESTAMP_FORMATS = [
-            "%Y-%m-%d %H:%M:%S",
-            "%d-%m-%Y %H:%M:%S",
-            "%Y-%m-%dT%H:%M:%S",
-            "%Y/%m/%d %H:%M:%S",
-        ]
-
-        def extract_timestamp(line: str):
-            for pattern, fmt in zip(TIMESTAMP_PATTERNS, TIMESTAMP_FORMATS):
-                m = re.search(pattern, line)
-                if m:
-                    try:
-                        return datetime.strptime(m.group(), fmt)
-                    except ValueError:
-                        continue
-            return None
+        # Timestamp extraction is centralized in log_format (single source).
+        extract_timestamp = log_format.extract_timestamp
 
         def line_matches(line: str, check_fn) -> Optional[bool]:
             ts = extract_timestamp(line)
@@ -204,12 +226,15 @@ class get_file_content:
         # Group into logical entries (timestamp + continuation lines)
         entries = self._group_into_entries(matched_lines)
 
-        return {
+        result = {
             "file": file_path,
             "filter": pick_date,
             "total_matched": len(entries),
             "logs": entries,
         }
+        if self._capped:
+            result["truncated"] = True
+        return result
 
     def fetch_lines_around(self, timestamp: str, context_lines: int = 10) -> dict:
         """
@@ -232,26 +257,11 @@ class get_file_content:
         if not self._all_lines:
             return {"error": "No file loaded yet. Call fetch_logs_by_date() first."}
 
-        TIMESTAMP_PATTERNS = [
-            (r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", "%Y-%m-%d %H:%M:%S"),
-            (r"\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}", "%d-%m-%Y %H:%M:%S"),
-            (r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", "%Y-%m-%dT%H:%M:%S"),
-            (r"\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}", "%Y/%m/%d %H:%M:%S"),
-        ]
-
-        def extract_ts(line):
-            for pattern, fmt in TIMESTAMP_PATTERNS:
-                m = re.search(pattern, line)
-                if m:
-                    try:
-                        return datetime.strptime(m.group(), fmt)
-                    except ValueError:
-                        continue
-            return None
+        extract_ts = log_format.extract_timestamp
 
         # Parse the requested timestamp
         target = None
-        for _, fmt in TIMESTAMP_PATTERNS:
+        for _pattern, fmt in log_format.TS_PATTERNS:
             try:
                 target = datetime.strptime(timestamp.strip(), fmt)
                 break
@@ -278,6 +288,7 @@ class get_file_content:
                 "context_lines": context_lines,
                 "lines": "",
                 "found": False,
+                "truncated": self._capped,
             }
 
         # Grab surrounding lines
@@ -290,6 +301,7 @@ class get_file_content:
             "context_lines": context_lines,
             "lines": "\n".join(line_item.rstrip() for line_item in surrounding),
             "found": True,
+            "truncated": self._capped,
         }
 
     def search_logs(self, keyword: str, max_results: int = 20) -> dict:
@@ -308,9 +320,7 @@ class get_file_content:
                 "entries":     List[str]  ← matched grouped entries, recent first
             }
         """
-        import sys
-        sys.stderr.write(f"[SEARCH TRACE] keyword={keyword}, max_results={max_results}\n")
-        sys.stderr.flush()
+        logger.debug("search_logs: keyword=%s, max_results=%d", keyword, max_results)
 
         if not self._all_lines:
             return {"error": "No file loaded yet. Call fetch_logs_by_date() first."}
@@ -319,25 +329,22 @@ class get_file_content:
 
         # Group all lines into entries first
         all_entries = self._group_into_entries(self._all_lines)
-        print("-----------------------", all_entries)
-        print("entry count:", len(all_entries))
-        print("entry serach", keyword_lower)
+
         # Filter entries containing the keyword
         matched = [entry for entry in all_entries if keyword_lower in entry.lower()]
 
         # Reverse — most recent first
         matched = list(reversed(matched))[:max_results]
-        print("matched count:", len(matched))
-        print("matched entries:", matched)
+        logger.debug("search_logs: %d entries scanned, %d matched", len(all_entries), len(matched))
 
-        sys.stderr.write(f"[SEARCH TRACE] found {len(matched)} entries\n")
-        sys.stderr.flush()
-
-        return {
+        result = {
             "keyword": keyword,
             "total_found": len(matched),
             "entries": matched,
         }
+        if self._capped:
+            result["truncated"] = True
+        return result
 
     def _group_into_entries(self, lines: list) -> list:
         """
@@ -359,25 +366,7 @@ class get_file_content:
                   "2024-03-01 10:00:09 INFO  Retrying..."
                 ]
         """
-        import re as _re
-
-        TS_PATTERNS = [
-            (r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", "%Y-%m-%d %H:%M:%S"),
-            (r"\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}", "%d-%m-%Y %H:%M:%S"),
-            (r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", "%Y-%m-%dT%H:%M:%S"),
-            (r"\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}", "%Y/%m/%d %H:%M:%S"),
-        ]
-
-        def has_timestamp(line: str) -> bool:
-            for pattern, fmt in TS_PATTERNS:
-                m = _re.search(pattern, line)
-                if m:
-                    try:
-                        datetime.strptime(m.group(), fmt)
-                        return True
-                    except ValueError:
-                        continue
-            return False
+        has_timestamp = log_format.has_timestamp
 
         entries = []
         current: list[str] = []
