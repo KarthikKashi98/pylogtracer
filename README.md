@@ -21,12 +21,15 @@ It supports any LLM provider — Ollama (local), OpenAI, Anthropic, or any custo
 
 ## Features
 
-- **Provider agnostic** — OpenAI, Anthropic, Ollama, or any OpenAI-compatible API
-- **Keyword learning** — LLM learns error patterns once, reuses them for free next time
+- **Provider agnostic** — OpenAI, Anthropic, Ollama, or any OpenAI-compatible API (vLLM, llama.cpp, Groq)
+- **Keyword learning** — LLM learns error patterns once, reuses them for free next time (persists across runs)
 - **ReAct agent** — multi-step reasoning, calls multiple tools per question
-- **Time resolver** — understands `"10am"`, `"yesterday"`, `"2 hours ago"`
+- **Grounded answers** — counts, durations, log lines come straight from the data; the model never invents them, and says "not found" instead of guessing
+- **Time resolver** — understands `"10am"`, `"yesterday"`, `"2 hours ago"`, `"between 9am and 11am"`
+- **Date-scoped search** — find a keyword's value on a specific date (`search("MODEL-X", date="2024-03-01")`)
 - **Cluster analysis** — groups related errors into incidents automatically
-- **Search** — find any log entry by keyword, incident ID, or error snippet
+- **Reports** — generate Markdown/HTML summaries (`generate_report`)
+- **Real logs** — gzip, JSON-lines, rotated files, custom formats, and huge files (bounded/tail reads)
 - **No .env required** — pass config directly to `LogTracer`
 
 ---
@@ -143,11 +146,20 @@ tracer.health_check()
 tracer.incident_duration()
 # {'start': '...', 'end': '...', 'duration_human': '6 minutes 12 seconds', ...}
 
-# Search
+# Search (any keyword / id / snippet)
 tracer.search("INC1000001")              # by incident ID
 tracer.search("connection refused")      # by keyword
+tracer.search("MODEL-X", date="2024-03-01")  # scope to one date (same key, per-date value)
 tracer.get_related_logs("INC1000004")   # all logs in same cluster
 tracer.get_entry_details("INC1000004")  # full entry with traceback
+
+# Duration of ANY keyword/id (first -> last occurrence)
+tracer.keyword_duration("INC1000001")
+tracer.incident_duration()               # the most recent error burst
+
+# Reports (no LLM needed)
+tracer.generate_report("markdown")
+tracer.generate_report("html", output="report.html")
 
 # Root cause (LLM required)
 tracer.root_cause_analysis()
@@ -174,6 +186,10 @@ tracer.ask("errors between 9am and 11am")
 # Identifier search
 tracer.ask("show me INC1000004 related logs")
 tracer.ask("what happened with REQ-456?")
+
+# Date-scoped value lookup (same key can differ per date)
+tracer.ask("what was the prediction for MODEL-X on 2024-03-01?")
+tracer.ask("how long did INC1000002 last?")
 
 # Multi-step (agent calls multiple tools automatically)
 tracer.ask("what caused the crash and how long did it last?")

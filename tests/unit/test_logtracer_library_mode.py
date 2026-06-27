@@ -85,3 +85,55 @@ def test_keyword_duration_not_found(sample_log_path):
     d = t.keyword_duration("NOPE-404")
     assert d["found"] is False
     assert d["occurrences"] == 0
+
+
+def test_search_scoped_by_date(tmp_path):
+    # Same keyword, different value per date — date scoping must isolate one.
+    p = tmp_path / "pred.log"
+    p.write_text(
+        "2024-03-01 10:00:00 INFO prediction for MODEL-X = 0.85\n"
+        "2024-03-02 10:00:00 INFO prediction for MODEL-X = 0.42\n"
+        "2024-03-03 10:00:00 INFO prediction for MODEL-X = 0.13\n",
+        encoding="utf-8",
+    )
+    t = LogTracer(str(p))
+    assert t.search("MODEL-X")["total_found"] == 3            # unscoped: all dates
+    scoped = t.search("MODEL-X", date="2024-03-01")
+    assert scoped["total_found"] == 1
+    assert "0.85" in scoped["entries"][0] and "0.42" not in scoped["entries"][0]
+
+
+def test_search_scoped_by_range(tmp_path):
+    p = tmp_path / "pred.log"
+    p.write_text(
+        "2024-03-01 09:00:00 INFO MODEL-X = 0.85\n"
+        "2024-03-01 15:00:00 INFO MODEL-X = 0.42\n",
+        encoding="utf-8",
+    )
+    t = LogTracer(str(p))
+    res = t.search("MODEL-X", from_dt="2024-03-01 08:00:00", to_dt="2024-03-01 12:00:00")
+    assert res["total_found"] == 1 and "0.85" in res["entries"][0]
+
+
+def test_read_is_memoized_per_filter(sample_log_path, monkeypatch):
+    # Count actual disk reads. summary() used to read TWICE (direct _read +
+    # _get_extraction); memoization must collapse same-filter reads to one.
+    import pylogtracer.preprocessing.log_format as lf
+    calls = {"n": 0}
+    real = lf.read_lines
+
+    def counting(*a, **k):
+        calls["n"] += 1
+        return real(*a, **k)
+
+    monkeypatch.setattr(lf, "read_lines", counting)
+    t = LogTracer(sample_log_path)
+
+    t.summary()
+    assert calls["n"] == 1, "summary() should read the file only once"
+
+    # Same-filter follow-ups reuse the cache — no further reads.
+    t.summary()
+    t.error_frequency()
+    t.last_incident()
+    assert calls["n"] == 1

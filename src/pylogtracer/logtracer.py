@@ -170,6 +170,10 @@ class LogTracer:
         self._last_filter: Optional[  # track which filter was used for cache
             tuple[Optional[str], Optional[str], Optional[str]]
         ] = None
+        # Read memoization: avoid re-reading the file for the same filter (e.g.
+        # summary() used to read twice). Keyed by the full filter tuple.
+        self._read_key: Optional[tuple] = None
+        self._read_result: Optional[Dict[str, Any]] = None
 
         # Persist classifier across ask() calls so keyword store survives
         # between questions — avoids re-learning same keywords every call.
@@ -332,7 +336,14 @@ class LogTracer:
         extraction = self._get_extraction(date=date, from_dt=from_dt, to_dt=to_dt)
         return extraction["last_cluster"] or []
 
-    def search(self, keyword: str, max_results: int = 20) -> Dict:
+    def search(
+        self,
+        keyword: str,
+        max_results: int = 20,
+        date: Optional[str] = None,
+        from_dt: Optional[str] = None,
+        to_dt: Optional[str] = None,
+    ) -> Dict:
         """
         Search logs for any keyword or unique identifier.
         Returns most recent matches first.
@@ -340,6 +351,10 @@ class LogTracer:
         Args:
             keyword:     Any string — "INC1033234", "connection refused", "db:5432"
             max_results: Max results to return. Default 20.
+            date:        Scope results to this date, e.g. "2024-03-01".
+            from_dt/to_dt: Scope results to a timestamp range. Useful when the
+                         SAME keyword has different values on different dates —
+                         e.g. "what was MODEL-X on 2024-03-01?".
 
         Returns:
             {
@@ -350,11 +365,57 @@ class LogTracer:
 
         Example:
             tracer.search("INC1033234")
-            tracer.search("connection refused")
+            tracer.search("MODEL-X", date="2024-03-01")
         """
-        logger.info("[SEARCH] Searching logs for keyword '%s' with max_results=%d...", keyword, max_results)
+        scoped = bool(date or from_dt or to_dt)
+        logger.info("[SEARCH] keyword='%s' max_results=%d date=%s from=%s to=%s",
+                    keyword, max_results, date, from_dt, to_dt)
         reader = self._get_reader()
-        return reader.search_logs(keyword, max_results=max_results)
+        # When scoping by date, fetch all matches first, then filter by timestamp.
+        result = reader.search_logs(keyword, max_results=10_000_000 if scoped else max_results)
+        if not scoped:
+            return result
+
+        entries = [e for e in result.get("entries", [])
+                   if self._entry_in_range(e, date, from_dt, to_dt)][:max_results]
+        return {"keyword": keyword, "total_found": len(entries), "entries": entries}
+
+    def _entry_in_range(
+        self,
+        entry: str,
+        date: Optional[str],
+        from_dt: Optional[str],
+        to_dt: Optional[str],
+    ) -> bool:
+        """True if a grouped log entry's timestamp falls on `date` / within range."""
+        from pylogtracer.preprocessing import log_format
+        from datetime import datetime
+
+        ts = log_format.extract_timestamp(entry)
+        if ts is None:
+            return False
+
+        if date:
+            try:
+                return ts.date() == datetime.strptime(str(date)[:10], "%Y-%m-%d").date()
+            except ValueError:
+                return False
+
+        def _parse(s):
+            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+                try:
+                    return datetime.strptime(s, fmt)
+                except (ValueError, TypeError):
+                    continue
+            return None
+
+        f = _parse(from_dt) if from_dt else None
+        t = _parse(to_dt) if to_dt else None
+        if f and ts < f:
+            return False
+        if t and ts > t:
+            return False
+        return True
 
     def health_check(self) -> Dict:
         """
@@ -767,7 +828,17 @@ class LogTracer:
         to_dt: Optional[str] = None,
         relative_day: Optional[str] = None,
     ) -> Dict:
-        """Internal: run SmartReader and return raw read result."""
+        """Internal: run SmartReader and return raw read result.
+
+        Memoized by filter: reading the same file with the same filter returns
+        the cached result instead of re-reading from disk. This is what stops
+        summary() (which needs both the read result and the extraction) from
+        reading the file twice — important on large logs.
+        """
+        key = (relative_day, date, from_dt, to_dt)
+        if self._read_key == key and self._read_result is not None and self._reader is not None:
+            return self._read_result
+
         reader = get_file_content(
             relative_day=relative_day,
             date=date,
@@ -785,8 +856,10 @@ class LogTracer:
         result = reader.fetch_logs_by_date(self.file_path)
         if "error" in result:
             raise RuntimeError(result["error"])
-        # Cache reader for context_bridge use
+        # Cache reader + result for context_bridge use and read memoization.
         self._reader = reader
+        self._read_key = key
+        self._read_result = result
         return result
 
     def _get_reader(
@@ -795,14 +868,13 @@ class LogTracer:
         from_dt: Optional[str] = None,
         to_dt: Optional[str] = None,
     ):
-        """Internal: return cached reader or create new one.
+        """Internal: return the reader for this filter.
 
-        The reader is (re)built only when there is no cached instance yet.
-        Previously this read the file twice on every call — once in the
-        guard and once unconditionally — doubling file I/O and parsing.
+        Delegates to the memoized `_read`, so this both guarantees the reader
+        matches the requested filter and reuses the cached read (no extra disk
+        I/O when the same filter was already read).
         """
-        if self._reader is None:
-            self._read(date=date, from_dt=from_dt, to_dt=to_dt)
+        self._read(date=date, from_dt=from_dt, to_dt=to_dt)
         logger.debug("SmartReader instance ready for use: %s", self._reader)
         return self._reader
 

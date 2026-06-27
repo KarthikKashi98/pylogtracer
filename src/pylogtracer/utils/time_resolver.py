@@ -132,6 +132,7 @@ class TimeResolver:
             or self._resolve_absolute_date(lower)  # "2024-03-01", "March 1"
             or self._resolve_duration_ago(lower)  # "2 hours ago"
             or self._resolve_last_duration(lower)  # "last 30 minutes"
+            or self._resolve_clock_range(lower)  # "between 9am and 11am", "9am to 5pm"
             or self._resolve_time_of_day_named(lower)  # "this morning/afternoon/evening/night"
             or self._resolve_last_night(lower)  # "last night"
             or self._resolve_yesterday_with_time(lower)  # "yesterday at 10am"
@@ -322,6 +323,48 @@ class TimeResolver:
                 "date": str(self._now.date()),
             }
         return None
+
+    # "between 9am and 11am", "from 9 to 5pm", "9am to 2pm", "10:00 until 14:30".
+    # Requires a range keyword (between/from … to/and/until/till) flanked by two
+    # clock times, so it never misfires on stray numbers like "section 3 to 5".
+    RANGE_RE = re.compile(
+        r"\b(between\s+|from\s+)?"
+        r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s+"
+        r"(?:to|and|until|till)\s+"
+        r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b",
+        re.IGNORECASE,
+    )
+
+    def _resolve_clock_range(self, text: str) -> Optional[Dict]:
+        """Resolve an explicit time RANGE → from start-of-first to end-of-second."""
+        from datetime import time as dtime
+
+        m = self.RANGE_RE.search(text)
+        if not m:
+            return None
+        prefix, h1, min1, mer1, h2, min2, mer2 = m.groups()
+        # Guard against stray numbers ("section 3 to 5"): only treat as a time
+        # range if it's clearly time-like — a between/from prefix, an am/pm, or
+        # explicit minutes.
+        if not (prefix or mer1 or mer2 or min1 or min2):
+            return None
+        fh = self._to_24h(int(h1), mer1)
+        th = self._to_24h(int(h2), mer2)
+        if not (0 <= fh <= 23 and 0 <= th <= 23):
+            return None
+        fmin = int(min1) if min1 else 0
+        tmin = int(min2) if min2 else 59  # no minutes given → cover the whole end hour
+
+        day = (self._now - timedelta(days=1)).date() if "yesterday" in text else self._now.date()
+        from_dt = datetime.combine(day, dtime(fh, fmin, 0))
+        to_dt = datetime.combine(day, dtime(th, tmin, 59))
+        if to_dt < from_dt:
+            return None  # nonsensical range — let other resolvers try
+        return {
+            "from_dt": self._fmt(from_dt),
+            "to_dt": self._fmt(to_dt),
+            "date": str(day),
+        }
 
     def _resolve_clock_time(self, text: str) -> Optional[Dict]:
         """

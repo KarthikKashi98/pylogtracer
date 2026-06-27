@@ -183,7 +183,8 @@ a follow-up question. ALWAYS use that context:
 
 ==================================================
 TOOLS:
-  search(keyword)                            — finds ALL log entries: INFO, DEBUG, WARNING, ERROR, CRITICAL
+  search(keyword, date?, from_dt?, to_dt?)   — finds ALL log entries (INFO/DEBUG/WARNING/ERROR);
+                                               pass date/from_dt/to_dt to scope to a day/window
   get_related_logs(identifier)               — finds all related logs in same cluster
   get_entry_details(identifier)              — full details + traceback for one entry
   error_frequency(date?, from_dt?, to_dt?)   — count errors by type
@@ -232,6 +233,14 @@ DEFAULT RULE:
   or "get" logs → ALWAYS use search(identifier). It finds everything.
   Use get_related_logs() ONLY when the question is specifically about the error cluster.
 
+DATE SCOPING (IMPORTANT):
+  If the user message contains [RESOLVED: ... date=... / from_dt=... / to_dt=...],
+  the question is scoped to that day/window. Pass those values into search so
+  results are limited to that date — the SAME keyword can have different values
+  on different dates. Example:
+    TOOL: search
+    ARGS: {"keyword": "MODEL-X", "date": "2024-03-01"}
+
 ==================================================
 HOW TO CALL A TOOL:
 TOOL: tool_name
@@ -253,6 +262,9 @@ RULES:
 - Log lines go inside ``` ``` exactly as the tool returned them
 - Summary goes AFTER --- only
 - If no logs found, say "No logs found."
+- NEVER invent log lines, timestamps, counts, dates, or causes. Use ONLY what the
+  tools returned. If the tools give you nothing relevant, say you don't know /
+  that no matching data was found — do not guess.
 
 ==================================================
 EXAMPLE 1 — search by identifier:
@@ -468,6 +480,10 @@ class QAAgent:
     def _node_think(self, state: AgentState) -> AgentState:
         """LLM decides: call a tool (TOOL:) or give the final answer (FINAL_ANSWER:)."""
         logger.debug("[QAAgent] Thinking...")
+        # A metric tool may have already produced a deterministic answer — skip
+        # the LLM so it can't paraphrase (and corrupt) the numbers.
+        if state.get("current_answer"):
+            return state
         if state["steps_taken"] >= MAX_STEPS:
             sq = state["sub_questions"][state["current_index"]]
             logger.debug("[QAAgent] Q%s: max steps reached — forcing answer", sq["id"])
@@ -511,12 +527,97 @@ class QAAgent:
         if self.redactor:
             result_text = self.redactor(result_text)
 
-        return {
+        new_state = {
             **state,
             "messages": state["messages"] + [HumanMessage(content=result_text)],
             "steps_taken": state["steps_taken"] + 1,
             "tool_evidence": state.get("tool_evidence", []) + [(tool_name, result)],
         }
+
+        # The tool's REAL output IS the answer — render it deterministically so
+        # the model can't fabricate or drop numbers / log lines / causes.
+        rendered = self._render_answer(tool_name, result)
+        if rendered is not None:
+            logger.debug("[QAAgent] Q%s answer rendered deterministically from %s", sq["id"], tool_name)
+            new_state["current_answer"] = rendered
+        return new_state
+
+    @staticmethod
+    def _fence(lines):
+        lines = [ln for ln in lines if ln]
+        return "```\n" + "\n".join(lines) + "\n```" if lines else None
+
+    def _render_answer(self, tool_name, result):
+        """
+        Render a tool's REAL output into the final answer — deterministically,
+        so the model can never invent numbers, log lines, or causes. Returns a
+        string (the answer), or None to let the LLM phrase it (rare).
+
+        When a tool returns nothing, we say so explicitly ("no entries found")
+        rather than letting the model guess — i.e. it says "don't know".
+        """
+        # ---- list-returning retrieval tools ----
+        if tool_name in ("errors_by_date", "errors_in_range", "last_incident"):
+            if not isinstance(result, list) or not result:
+                return "No errors found for that query."
+            return self._fence([f"{e.get('timestamp')} | {e.get('error_type')} | "
+                                f"{e.get('primary_error', '')}" for e in result])
+
+        if not isinstance(result, dict):
+            return None
+        if "error" in result:  # tool reported nothing/failure — surface it verbatim
+            return str(result["error"])
+
+        # ---- metrics (numbers come straight from the tool) ----
+        if tool_name == "health_check":
+            return result.get("summary") or f"Status: {result.get('status')}"
+        if tool_name == "error_frequency":
+            if not result:
+                return "No errors found."
+            total = sum(result.values())
+            parts = ", ".join(f"{k} ({v})" for k, v in result.items())
+            return f"{total} error(s) found across {len(result)} type(s): {parts}."
+        if tool_name == "summary":
+            return (f"{result.get('total_entries', 0)} entries, {result.get('total_errors', 0)} "
+                    f"error(s) across {result.get('total_clusters', 0)} incident(s). "
+                    f"First error: {result.get('first_error') or 'n/a'}; "
+                    f"last error: {result.get('last_error') or 'n/a'}.")
+        if tool_name == "incident_duration":
+            return (f"The last incident lasted {result.get('duration_human')} "
+                    f"({result.get('start')} -> {result.get('end')}), "
+                    f"{result.get('error_count')} error(s).")
+        if tool_name == "keyword_duration":
+            if not result.get("found"):
+                return result.get("note") or f"No entries found for '{result.get('keyword')}'."
+            return (f"{result.get('keyword')} occurred {result.get('occurrences')} time(s) over "
+                    f"{result.get('duration_human')}, from {result.get('first_occurrence')} "
+                    f"to {result.get('last_occurrence')}.")
+        if tool_name == "root_cause":
+            parts = []
+            if result.get("root_cause"):
+                parts.append(f"Root cause: {result['root_cause']}")
+            if result.get("error_chain"):
+                parts.append(f"Error chain:\n{result['error_chain']}")
+            if result.get("suggested_fix"):
+                parts.append(f"Suggested fix: {result['suggested_fix']}")
+            return "\n\n".join(parts) if parts else None
+
+        # ---- retrieval (show the REAL log lines, or say none found) ----
+        if tool_name == "search":
+            entries = result.get("entries", [])
+            return self._fence(entries) or f"No log entries found containing '{result.get('keyword', '')}'."
+        if tool_name == "get_related_logs":
+            if not result.get("found"):
+                return result.get("note") or f"No log entries found for '{result.get('identifier')}'."
+            body = self._fence(result.get("all_entries", [])) or ""
+            note = result.get("note")
+            return (body + ("\n" + note if note else "")) or note
+        if tool_name == "get_entry_details":
+            if not result.get("found"):
+                return f"No entry found for '{result.get('identifier')}'."
+            raws = [e.get("raw") or e.get("full_entry", "") for e in result.get("entries", [])]
+            return self._fence(raws) or f"No entry details for '{result.get('identifier')}'."
+        return None
 
     def _node_finalize(self, state: AgentState) -> AgentState:
         """Extract FINAL_ANSWER from message history into current_answer."""
@@ -539,11 +640,19 @@ class QAAgent:
                     answer = msg.content if isinstance(msg.content, str) else str(msg.content)
                     break
 
-        if answer is None:
-            answer = "No answer generated."
+        if self._is_blank_answer(answer):
+            # Never return a blank answer (small models occasionally emit one).
+            answer = "I couldn't determine an answer from the logs for this question."
 
         answer = self._attach_evidence(answer, state)
         return {**state, "current_answer": answer}
+
+    def _is_blank_answer(self, answer: Optional[str]) -> bool:
+        """True if the answer is effectively empty (blank, or just ``` fences / ---)."""
+        if not answer:
+            return True
+        cleaned = re.sub(r"```|-{3,}", "", answer)
+        return not cleaned.strip()
 
     def _attach_evidence(self, answer: str, state: AgentState) -> str:
         """Append the actual tool-sourced log lines as verifiable evidence."""
@@ -663,6 +772,12 @@ class QAAgent:
         if has_tool and not state.get("tool_evidence"):
             return "tool"
         if has_final:
+            # Reject an EMPTY final answer (model returned a blank block without
+            # calling a tool): retry while we still can, so we don't finalize ""
+            answer = self._extract_final_answer(content)
+            if self._is_blank_answer(answer) and not state.get("tool_evidence") and state["steps_taken"] < MAX_STEPS:
+                logger.debug("[QAAgent] Empty FINAL_ANSWER with no evidence — retrying")
+                return "tool"
             return "finalize"
         if has_tool:
             return "tool"
@@ -723,7 +838,7 @@ class QAAgent:
 
         elif tool_name == "search":
             kw = args.get("keyword") or args.get("identifier", "")
-            return t.search(kw)
+            return t.search(kw, **self._safe_args(args, ["date", "from_dt", "to_dt"]))
 
         elif tool_name == "get_related_logs":
             idf = args.get("identifier") or args.get("keyword", "")

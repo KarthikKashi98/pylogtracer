@@ -42,3 +42,28 @@ def test_no_time_reference_is_not_resolved():
     res = _r("is the system healthy?")
     assert res["resolved"] is False
     assert res["enriched_question"] == "is the system healthy?"
+
+
+def test_between_range_covers_both_ends():
+    res = _r("errors between 9am and 11am")
+    assert res["from_dt"] == "2024-03-01 09:00:00"
+    assert res["to_dt"] == "2024-03-01 11:59:59"   # NOT clipped to the first hour
+
+
+def test_from_to_range_with_pm():
+    res = _r("show errors from 9am to 5pm")
+    assert res["from_dt"] == "2024-03-01 09:00:00"
+    assert res["to_dt"] == "2024-03-01 17:59:59"
+
+
+def test_range_with_minutes():
+    res = _r("between 10:15 and 10:45")
+    assert res["from_dt"] == "2024-03-01 10:15:00"
+    assert res["to_dt"] == "2024-03-01 10:45:59"
+
+
+def test_range_does_not_misfire_on_plain_numbers():
+    # "section 3 to 5" is not a time range request -> not resolved as a range.
+    res = _r("what is in section 3 to 5 of the report?")
+    # If anything resolves it must NOT be a 03:00-05:xx window from those digits.
+    assert not (res["from_dt"] == "2024-03-01 03:00:00")

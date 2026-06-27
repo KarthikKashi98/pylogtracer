@@ -24,6 +24,7 @@ from datetime import datetime
 from collections import Counter
 
 from pylogtracer.preprocessing.error_type_classifier import ErrorTypeClassifier
+from pylogtracer.preprocessing import log_format
 
 logger = logging.getLogger(__name__)
 
@@ -45,12 +46,9 @@ class ErrorExtractor:
     ERROR_LEVELS = {"ERROR", "ERR", "CRITICAL", "CRIT", "FATAL"}
     WARN_LEVELS = {"WARN", "WARNING"}
 
-    TIMESTAMP_PATTERNS = [
-        (r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", "%Y-%m-%d %H:%M:%S"),
-        (r"\d{2}-\d{2}-\d{4} \d{2}:\d{2}:\d{2}", "%d-%m-%Y %H:%M:%S"),
-        (r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", "%Y-%m-%dT%H:%M:%S"),
-        (r"\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}", "%Y/%m/%d %H:%M:%S"),
-    ]
+    # Single source of truth — defined once in log_format and reused here so a
+    # new timestamp format only ever needs to be added in one place.
+    TIMESTAMP_PATTERNS = log_format.TS_PATTERNS
 
     def __init__(
         self,
@@ -229,14 +227,8 @@ class ErrorExtractor:
     # ─────────────────────────────────────────────────────────────
 
     def _extract_timestamp(self, entry: str) -> Optional[datetime]:
-        for pattern, fmt in self.TIMESTAMP_PATTERNS:
-            m = re.search(pattern, entry)
-            if m:
-                try:
-                    return datetime.strptime(m.group(), fmt)
-                except ValueError:
-                    continue
-        return None
+        # Delegate to the shared parser so timestamp handling stays in one place.
+        return log_format.extract_timestamp(entry)
 
     # ─────────────────────────────────────────────────────────────
     # PRIVATE — clustering with duplicate merge

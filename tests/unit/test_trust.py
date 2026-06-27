@@ -190,6 +190,83 @@ def test_router_finalizes_once_evidence_exists():
     assert agent._route_after_think(state) == "finalize"
 
 
+# ── deterministic rendering of metric tools (no LLM paraphrasing) ──
+def test_render_metric_health_uses_summary():
+    agent = QAAgent(tracer=None, factory=None)
+    out = agent._render_answer("health_check",
+                               {"status": "WARNING", "summary": "WARNING: 9 error(s) found."})
+    assert out == "WARNING: 9 error(s) found."
+
+
+def test_render_metric_frequency_computes_real_total():
+    # The real total is 4 — the model must not be able to invent "152".
+    agent = QAAgent(tracer=None, factory=None)
+    out = agent._render_answer("error_frequency", {"AuthError": 3, "TimeoutError": 1})
+    assert "4 error(s)" in out
+    assert "AuthError (3)" in out and "TimeoutError (1)" in out
+
+
+def test_render_metric_duration():
+    agent = QAAgent(tracer=None, factory=None)
+    out = agent._render_answer("incident_duration", {
+        "duration_human": "14 second(s)", "start": "10:02:12", "end": "10:02:26", "error_count": 4})
+    assert "14 second(s)" in out
+
+
+def test_render_metric_keyword_duration():
+    agent = QAAgent(tracer=None, factory=None)
+    out = agent._render_answer("keyword_duration", {
+        "found": True, "keyword": "REQ-1", "occurrences": 3,
+        "first_occurrence": "09:15:22", "last_occurrence": "09:15:26",
+        "duration_human": "4 second(s)"})
+    assert "REQ-1" in out and "4 second(s)" in out and "3 time(s)" in out
+
+
+def test_render_search_shows_real_lines():
+    agent = QAAgent(tracer=None, factory=None)
+    out = agent._render_answer("search", {"keyword": "INC1",
+                                          "entries": ["2024 ERROR a INC1", "2024 INFO b INC1"]})
+    assert "2024 ERROR a INC1" in out and "2024 INFO b INC1" in out
+
+
+def test_render_search_says_none_found():
+    agent = QAAgent(tracer=None, factory=None)
+    out = agent._render_answer("search", {"keyword": "NOPE", "entries": []})
+    assert "No log entries found containing 'NOPE'" in out
+
+
+def test_render_errors_in_range_empty_says_so():
+    agent = QAAgent(tracer=None, factory=None)
+    assert "No errors found" in agent._render_answer("errors_in_range", [])
+
+
+def test_render_root_cause_relays_analyzer_output():
+    agent = QAAgent(tracer=None, factory=None)
+    out = agent._render_answer("root_cause", {"root_cause": "DB pool exhausted",
+                                              "suggested_fix": "raise pool size"})
+    assert "DB pool exhausted" in out and "raise pool size" in out
+
+
+def test_render_unknown_tool_returns_none():
+    agent = QAAgent(tracer=None, factory=None)
+    assert agent._render_answer("totally_unknown_tool", {"x": 1}) is None
+
+
+def test_router_retries_on_empty_final_answer():
+    # Model emitted an empty FINAL_ANSWER and no tool ran -> retry, don't finalize "".
+    agent = QAAgent(tracer=None, factory=None)
+    msg = AIMessage(content="FINAL_ANSWER:\n```\n```")
+    state = {"messages": [msg], "tool_evidence": [], "steps_taken": 0, "current_answer": None}
+    assert agent._route_after_think(state) == "tool"
+
+
+def test_finalize_never_returns_blank():
+    agent = QAAgent(tracer=None, factory=None)
+    state = {"messages": [], "tool_evidence": [], "current_answer": None}
+    out = agent._node_finalize(state)
+    assert out["current_answer"].strip()  # a real message, never empty
+
+
 def test_evidence_skips_lines_already_in_answer():
     agent = QAAgent(tracer=None, factory=None, evidence=True)
     line = "2024-01-01 10:00:00 ERROR boom"
