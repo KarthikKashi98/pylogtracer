@@ -115,13 +115,18 @@ Examples:
   Rewrite: "Search for ALL log entries (including INFO, DEBUG, WARNING, ERROR) that contain INC1000004."
 
 ==================================================
-REWRITING RULE FOR "PREDICTION / SPECIFIC DATA" QUESTIONS
+REWRITING RULE FOR "VALUE / SPECIFIC DATA" QUESTIONS
 
-When the user asks for specific data within logs (prediction, status, result, value),
-rewrite using:
+When the user asks for a value/result/status/prediction tied to a keyword or id —
+"what is/was X", "what is the result/value/status of X", "X on <date>" — they want
+to FIND that line in the logs. Rewrite as a SEARCH (never a summary/overview):
 
-  "Search for the prediction result of [IDENTIFIER] in the logs."
-  "Find the [data] for [IDENTIFIER] in the logs."
+  "Search the logs for [KEYWORD]."
+  "Search the logs for [KEYWORD] on [DATE]."   (keep the date if one is given)
+
+Examples:
+  "what was MODEL-X on 2024-03-01?"  -> "Search the logs for MODEL-X on 2024-03-01."
+  "prediction result of REQ-9?"       -> "Search the logs for REQ-9."
 
 ==================================================
 OUTPUT FORMAT (STRICT)
@@ -303,6 +308,17 @@ REASON: search all log types for this identifier
 
 FINAL_ANSWER:
 No logs found for REQ-xyz999.
+
+==================================================
+EXAMPLE 3 — "how long" about a SPECIFIC id/keyword → keyword_duration (NOT incident_duration):
+
+User: How long did INC1000004 last?
+
+TOOL: keyword_duration
+ARGS: {"keyword": "INC1000004"}
+REASON: the question is about a specific id, so measure its first->last occurrence
+
+(Use incident_duration ONLY when the question has NO specific id, e.g. "how long did the last incident last?")
 ==================================================
 """
 
@@ -505,11 +521,28 @@ class QAAgent:
             logger.error("[QAAgent] LLM error: %s", e)
             return {**state, "current_answer": f"Error during analysis: {e}"}
 
+    # An incident/request-style id token (INC5000002, REQ-4471, TXN12345, ...).
+    _ID_RE = re.compile(r"\b[A-Za-z]{2,}-?\d{3,}\b")
+
+    def _identifier_in(self, text):
+        m = self._ID_RE.search(text or "")
+        return m.group(0) if m else None
+
     def _node_tool(self, state: AgentState) -> AgentState:
         """Parse TOOL/ARGS from last AI message, execute tool, append result."""
         last_content = self._last_ai_content(state["messages"])
         tool_name, tool_args = self._parse_tool_call(last_content)
         sq = state["sub_questions"][state["current_index"]]
+
+        # "how long did <ID> last?" — small models often pick incident_duration
+        # (the LAST incident) when the user named a SPECIFIC id. Redirect to
+        # keyword_duration so the answer is about the id they actually asked for.
+        if tool_name == "incident_duration":
+            ident = self._identifier_in(sq.get("question", ""))
+            if ident:
+                tool_name, tool_args = "keyword_duration", {"keyword": ident}
+                logger.debug("[QAAgent] redirected incident_duration -> keyword_duration(%s)", ident)
+
         logger.debug("[QAAgent] Q%s tool: %s(%s)", sq["id"], tool_name, tool_args)
 
         try:
@@ -804,15 +837,15 @@ class QAAgent:
 
         elif tool_name == "errors_by_date":
             date = args.get("date")
-            if not date:
-                return {"error": "date required"}
+            if not date or not self._DATE_RE.search(str(date)):
+                return {"error": "a valid date is required, e.g. 2024-03-01"}
             return self._fmt_errors(t.errors_by_date(date))
 
         elif tool_name == "errors_in_range":
             from_dt = args.get("from_dt")
             to_dt = args.get("to_dt")
-            if not from_dt or not to_dt:
-                return {"error": "from_dt and to_dt required"}
+            if not (from_dt and to_dt and self._DATE_RE.search(str(from_dt)) and self._DATE_RE.search(str(to_dt))):
+                return {"error": "valid from_dt and to_dt are required, e.g. 2024-03-01 09:00:00"}
             return self._fmt_errors(t.errors_in_range(from_dt, to_dt))
 
         elif tool_name == "last_incident":
@@ -955,12 +988,24 @@ class QAAgent:
                 return str(content) if not isinstance(content, str) else content
         return ""
 
+    # A plausible date / datetime string (YYYY-MM-DD, DD-MM-YYYY, YYYY/MM/DD ...).
+    _DATE_RE = re.compile(r"\d{4}[-/]\d{2}[-/]\d{2}|\d{2}-\d{2}-\d{4}")
+
     def _safe_args(self, args: dict, allowed: list) -> dict:
-        return {
-            k: v
-            for k, v in args.items()
-            if k in allowed and v and v != "null"
-        }
+        """Keep only allowed args, and drop bogus date values the model invents.
+
+        Without this, an id like 'INC5000002' wrongly handed to date/from_dt/to_dt
+        reaches the reader and crashes it with 'Invalid datetime format'.
+        """
+        out = {}
+        for k, v in args.items():
+            if k not in allowed or not v or v == "null":
+                continue
+            if k in ("date", "from_dt", "to_dt") and not self._DATE_RE.search(str(v)):
+                logger.debug("[QAAgent] dropping non-date %s=%r", k, v)
+                continue
+            out[k] = v
+        return out
 
     def _fmt_errors(self, errors: list) -> list:
         return [

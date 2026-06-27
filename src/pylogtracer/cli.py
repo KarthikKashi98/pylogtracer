@@ -179,7 +179,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         (args.incident, "last_incident", lambda: tracer.last_incident(**tf)),
         (args.duration, "incident_duration", lambda: tracer.incident_duration(**tf)),
         (args.duration_of, "keyword_duration", lambda: tracer.keyword_duration(args.duration_of)),
-        (args.search, "search", lambda: tracer.search(args.search)),
+        (args.search, "search", lambda: tracer.search(args.search, **tf)),
         (args.related, "related", lambda: tracer.get_related_logs(args.related)),
         (args.root_cause, "root_cause", lambda: tracer.root_cause_analysis(**tf)),
         (args.ask, "answer", lambda: tracer.ask(args.ask)),

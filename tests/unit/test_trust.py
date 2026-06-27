@@ -252,6 +252,37 @@ def test_render_unknown_tool_returns_none():
     assert agent._render_answer("totally_unknown_tool", {"x": 1}) is None
 
 
+def test_safe_args_drops_bogus_date_values():
+    # An id wrongly passed as a date must be dropped (prevents reader crash).
+    agent = QAAgent(tracer=None, factory=None)
+    assert agent._safe_args({"date": "INC5000002"}, ["date"]) == {}
+    assert agent._safe_args({"date": "2024-03-01"}, ["date"]) == {"date": "2024-03-01"}
+    assert agent._safe_args({"from_dt": "2024-03-01 09:00:00"}, ["from_dt"]) == \
+        {"from_dt": "2024-03-01 09:00:00"}
+
+
+def test_identifier_extraction():
+    agent = QAAgent(tracer=None, factory=None)
+    assert agent._identifier_in("how long did INC5000002 last?") == "INC5000002"
+    assert agent._identifier_in("how long did REQ-4471 last?") == "REQ-4471"
+    assert agent._identifier_in("how long did the last incident last?") is None
+
+
+def test_incident_duration_redirects_to_keyword_for_specific_id(sample_log_path):
+    # Model picks incident_duration but the question names INC1000001 ->
+    # must answer about THAT id (keyword_duration), not the last incident.
+    t = LogTracer(sample_log_path)
+    agent = QAAgent(tracer=t, factory=None)
+    state = {
+        "messages": [AIMessage(content="TOOL: incident_duration\nARGS: {}")],
+        "sub_questions": [{"id": 0, "question": "how long did INC1000001 last?"}],
+        "current_index": 0, "tool_evidence": [], "steps_taken": 0, "current_answer": None,
+    }
+    out = agent._node_tool(state)
+    assert "INC1000001" in out["current_answer"]
+    assert "25 second" in out["current_answer"]   # INC1000001 span in the fixture
+
+
 def test_router_retries_on_empty_final_answer():
     # Model emitted an empty FINAL_ANSWER and no tool ran -> retry, don't finalize "".
     agent = QAAgent(tracer=None, factory=None)
